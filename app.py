@@ -95,7 +95,6 @@ elif page == "ho_dashboard":
         region_filter = None,       # HO sees all rows
     )
 
-
 # ── CH Dashboard (both roles can view) ────────────────────
 #
 #   CH  → allow_remark=True,  region_filter = their assigned circles
