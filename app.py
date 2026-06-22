@@ -9,6 +9,7 @@ from main import (
     func1,
     update_ch_raw_data,
     update_ho_raw_data,
+    checking_call_age_ch_data,
 )
 
 st.set_page_config(page_title="Service Report Generator", layout="wide")
@@ -43,13 +44,6 @@ def access_denied():
 
 
 def get_ch_regions() -> list[str] | None:
-    """
-    Parse the CH user's assigned regions from session state.
-
-    user_regions is stored as a comma-separated string, e.g. "Rajkot, Calicut".
-    Returns a list of stripped region strings to compare against the 'circle'
-    column in the sheet.  Returns None for HO (no restriction).
-    """
     if is_ho:
         return None                     # HO sees all rows
     raw = st.session_state.get("user_regions", "")
@@ -73,9 +67,10 @@ if page == "upload":
     )
 
     if uploaded_raw_file is not None:
-        if st.button("Generate Report"):
+        if st.button("Upload Data"):
             with st.spinner("Processing data and pushing to Database..."):
                 try:
+                    checking_call_age_ch_data()
                     final_df = func1(uploaded_raw_file)
                     if isinstance(final_df, pd.DataFrame):
                         update_ch_raw_data()
