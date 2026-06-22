@@ -155,7 +155,7 @@ def render_login_page():
             unsafe_allow_html=True,
         )
 
-        # ✅ submitted check is INSIDE the with-col block but the
+        # submitted check is INSIDE the with-col block but the
         #    form result is captured via the return value of form_submit_button,
         #    which Streamlit preserves correctly within the same render cycle.
         with st.form("login_form", clear_on_submit=False):
@@ -163,7 +163,7 @@ def render_login_page():
             password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
             submitted = st.form_submit_button("Sign In →", use_container_width=True)
 
-            # ✅ Handle submission INSIDE the form block so `submitted`,
+            # Handle submission INSIDE the form block so `submitted`,
             #    `mobile`, and `password` are all in the same scope/render pass.
             if submitted:
                 if not mobile or not password:
