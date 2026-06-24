@@ -63,19 +63,6 @@ def inject_table_styles():
     """, unsafe_allow_html=True)
 
 
-# ── User Info Banner Helper ───────────────────────────────
-
-# def user_info_caption():
-#     # Looks for a global or state variable. Safe fallback to state.
-#     current_user = st.session_state.get("user_name", "UnknownUser")
-#     parts = [f"Logged in as **{current_user}**"]
-#     if st.session_state.get("user_role"):
-#         parts.append(f"Role: {st.session_state['user_role']}")
-#     if st.session_state.get("user_regions"):
-#         parts.append(f"Regions: {st.session_state['user_regions']}")
-#     st.caption("  |  ".join(parts))
-
-
 # ── Cached Data Fetching ───────────────────────────────────
 
 def fetch_sheet_data(spreadsheet, sheet_name: str):
@@ -132,62 +119,101 @@ def render_cache_controls(sheet_name: str):
             st.rerun()
 
 
-# ── Remark Dialog ─────────────────────────────────────────
+# ── Dual Remark Dialog Component ──────────────────────────
 
-@st.dialog("Update Remark", width="medium", dismissible=False)
+@st.dialog("Update Remarks", width="medium", dismissible=False)
 def remark_dialog(ws, row_index, cache_row_idx, service_id,
-                 existing_remark, remark_col, col_idx,
-                 sheet_name, headers, pending_key):
+                  sheet_name, headers, pending_key):
+    
+    # 1. Generate column labels for today's entry
+    # today_str = datetime.now(IST).strftime("%d_%m_%Y")
+    today_str = datetime.now(IST).strftime("%Y-%m-%d")
+    cust_col  = f"cust_remark_{today_str}"
+    asp_col   = f"asp_remark_{today_str}"
+    
+    # 2. Extract history safely directly from memory cache
+    ck = f"cache_df_{sheet_name}"
+    existing_cust = ""
+    existing_asp  = ""
+    
+    if ck in st.session_state and cache_row_idx is not None:
+        master_df = st.session_state[ck]
+        if cust_col in master_df.columns:
+            val_c = master_df.at[cache_row_idx, cust_col]
+            existing_cust = "" if pd.isna(val_c) or str(val_c).strip() in ("", "nan") else str(val_c).strip()
+        if asp_col in master_df.columns:
+            val_a = master_df.at[cache_row_idx, asp_col]
+            existing_asp = "" if pd.isna(val_a) or str(val_a).strip() in ("", "nan") else str(val_a).strip()
+
     st.markdown(f"**Service ID:** `{service_id}`")
-    st.markdown(
-        f"<span style='color:#7f9fbf;font-size:12px;'>Remark column: "
-        f"<code style='color:#63b3ed'>{remark_col}</code></span>",
-        unsafe_allow_html=True,
-    )
     st.divider()
 
-    if existing_remark:
-        st.info(f"Existing remark history:\n\n{existing_remark}")
-        overwrite = st.checkbox("Append/Overwrite existing entry")
+    # 3. Customer Input Section
+    st.markdown("**💬 Customer Remark History**")
+    if existing_cust:
+        st.info(existing_cust)
+    new_cust = st.text_area("Customer Remark Input", placeholder="Type customer remark here...", 
+                            height=100, label_visibility="collapsed", key="dialog_cust_input")
+
+    st.divider()
+
+    # 4. ASP Input Section
+    st.markdown("**🛠️ ASP Remark History**")
+    if existing_asp:
+        st.info(existing_asp)
+    new_asp = st.text_area("ASP Remark Input", placeholder="Type ASP remark here...", 
+                           height=100, label_visibility="collapsed", key="dialog_asp_input")
+
+    # 5. Overwrite Checkbox
+    if existing_cust or existing_asp:
+        overwrite = st.checkbox("Append entries to existing history tracker", value=True)
     else:
         overwrite = True
 
-    new_remark = st.text_area(
-        "Remark", placeholder="Type your remark here...",
-        height=120, label_visibility="collapsed",
-    )
-
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Save Remark", use_container_width=True, type="primary"):
-            if not new_remark.strip():
-                st.warning("Remark cannot be empty.")
-            elif existing_remark and not overwrite:
-                st.warning("Check the append/overwrite box to update.")
+        if st.button("Save Remarks", use_container_width=True, type="primary"):
+            if not new_cust.strip() and not new_asp.strip():
+                st.warning("Both remark entries cannot be empty.")
+            elif (existing_cust or existing_asp) and not overwrite:
+                st.warning("Please toggle the append validation checkbox.")
             else:
-                # ── Format payload with Username and Current timestamp ──
                 uname = st.session_state.get("user_name", "UnknownUser")
                 timestamp = datetime.now(IST).strftime("%H:%M:%S")
-                formatted_remark = f"{uname}_{timestamp} -- {new_remark.strip()}"
+                
+                # Update Customer Column
+                if new_cust.strip():
+                    payload_cust = f"{uname}_{timestamp} -- {new_cust.strip()}"
+                    final_cust = f"{existing_cust}\n{payload_cust}" if (existing_cust and overwrite) else payload_cust
+                    
+                    c_idx = headers.index(cust_col) + 1 if cust_col in headers else None
+                    _save_remark(ws=ws, row_index=row_index, remark_col=cust_col, col_idx=c_idx,
+                                 remark_text=final_cust, sheet_name=sheet_name, headers=headers, cache_row_idx=cache_row_idx)
 
-                _save_remark(ws=ws, row_index=row_index, remark_col=remark_col,
-                             col_idx=col_idx, remark_text=formatted_remark,
-                             sheet_name=sheet_name, headers=headers,
-                             cache_row_idx=cache_row_idx)
+                # Update ASP Column
+                if new_asp.strip():
+                    payload_asp = f"{uname}_{timestamp} -- {new_asp.strip()}"
+                    final_asp = f"{existing_asp}\n{payload_asp}" if (existing_asp and overwrite) else payload_asp
+                    
+                    a_idx = headers.index(asp_col) + 1 if asp_col in headers else None
+                    _save_remark(ws=ws, row_index=row_index, remark_col=asp_col, col_idx=a_idx,
+                                 remark_text=final_asp, sheet_name=sheet_name, headers=headers, cache_row_idx=cache_row_idx)
+
                 st.session_state.pop(pending_key, None)
                 st.rerun()
     with c2:
         if st.button("Cancel", use_container_width=True):
-            # Cleanly drop the pending tracker so the modal closes
             st.session_state.pop(pending_key, None)
-            # This rerun updates the table key above, clearing the row highlighting instantly
             st.rerun()
 
 
 def _save_remark(ws, row_index, remark_col, col_idx, remark_text,
                  sheet_name, headers, cache_row_idx=None):
-    if col_idx is None:
-        col_idx = len(headers) + 1
+    hk = f"cache_headers_{sheet_name}"
+    current_headers = st.session_state.get(hk, headers)
+
+    if col_idx is None or remark_col not in current_headers:
+        col_idx = len(current_headers) + 1
         sheet_meta        = ws.spreadsheet.fetch_sheet_metadata()
         current_col_count = 0
         for s in sheet_meta["sheets"]:
@@ -196,18 +222,15 @@ def _save_remark(ws, row_index, remark_col, col_idx, remark_text,
                 break
         if col_idx > current_col_count:
             ws.spreadsheet.batch_update({"requests": [{"updateSheetProperties": {
-                "properties": {"sheetId": ws.id,
-                               "gridProperties": {"columnCount": col_idx + 10}},
+                "properties": {"sheetId": ws.id, "gridProperties": {"columnCount": col_idx + 10}},
                 "fields": "gridProperties.columnCount"}}]})
+        
         ws.update_cell(1, col_idx, remark_col)
-        hk = f"cache_headers_{sheet_name}"
         if hk in st.session_state:
             st.session_state[hk].append(remark_col)
 
-    # Fast background upload
     ws.update_cell(row_index, col_idx, remark_text)
 
-    # ── SPEED FIX: Update local data cache instantly ──
     ck = f"cache_df_{sheet_name}"
     if ck in st.session_state and cache_row_idx is not None:
         master = st.session_state[ck]
@@ -216,7 +239,8 @@ def _save_remark(ws, row_index, remark_col, col_idx, remark_text,
         master.at[cache_row_idx, remark_col] = remark_text
         st.session_state[ck] = master
 
-    show_popup(f"Remark saved in '{remark_col}'", type="success")
+    show_popup(f"Saved to {remark_col}", type="success")
+
 
 # ── Pagination ────────────────────────────────────────────
 
@@ -283,13 +307,9 @@ def render_dashboard(
 ):
     inject_table_styles()
     st.header(title)
-    
-    # # Render user metadata banner cleanly at the top
-    # user_info_caption()
 
     if not allow_remark:
-        st.markdown("<div class='ro-banner'>View-only · Cannot add or edit remarks.</div>",
-                    unsafe_allow_html=True)
+        st.markdown("<div class='ro-banner'>View-only · Cannot add or edit remarks.</div>", unsafe_allow_html=True)
 
     spreadsheet = connect_gsheet()
     if not spreadsheet:
@@ -326,10 +346,6 @@ def render_dashboard(
 
     pending_key = f"pending_remark_{sheet_name}"
 
-    today_str      = datetime.now().strftime("%Y-%m-%d")
-    remark_col     = f"remark_{today_str}"
-    remark_col_idx = (headers.index(remark_col) + 1) if remark_col in headers else None
-
     # ── Process dynamic popup triggers safely via standard session_state ──
     if pending_key in st.session_state:
         p = st.session_state[pending_key]
@@ -338,9 +354,7 @@ def render_dashboard(
             st.rerun()
         remark_dialog(
             ws=ws, row_index=p["sheet_row"], cache_row_idx=p["cache_row_idx"],
-            service_id=p["sid_val"], existing_remark=p["existing_remark"],
-            remark_col=remark_col, col_idx=remark_col_idx,
-            sheet_name=sheet_name, headers=headers, pending_key=pending_key,
+            service_id=p["sid_val"], sheet_name=sheet_name, headers=headers, pending_key=pending_key,
         )
 
     render_cache_controls(sheet_name)
@@ -429,33 +443,30 @@ def render_dashboard(
             use_container_width=True,
         )
 
+    # ── Parse historical remark columns sequentially ──
     all_remark_cols = sorted(
-        [c for c in master_df.columns if c.startswith("remark_")],
-        key=lambda x: x.replace("remark_", ""),
+        [c for c in master_df.columns if c.startswith("cust_remark_") or c.startswith("asp_remark_")],
+        key=lambda x: x.split("_")[-1] + x.split("_")[-2] + x.split("_")[-3] if len(x.split("_")) >= 4 else x
     )
 
     start, end = render_pagination(sheet_name, len(df_filtered), position="top")
     df_page = df_filtered.iloc[start:end].copy()
 
-    hint = " · Click a row anywhere to add/edit remarks" if allow_remark else ""
+    hint = " · Click a row anywhere to add/edit customer or ASP remarks" if allow_remark else ""
     st.caption(
         f"Showing rows {start + 1}–{end} of {len(df_filtered)}"
         + (f" (filtered from {len(df_view)} total)" if (search or selected_circle != "All") else "")
         + hint
     )
 
-    # ── Native Dynamic-Width Interactive Table ────────────
+    # ── Native Table Rendering Framework ──────────────────
     columns_order = FIXED_COLS + all_remark_cols
 
-    # Clean display values
     for col in all_remark_cols:
         if col in df_page.columns:
             df_page[col] = df_page[col].fillna("-").replace("nan", "-")
 
-    # Layout column setups dynamically
-    # Layout column setups dynamically
     column_config = {
-        # Pinned=True freezes the column on horizontal scroll natively
         "service_id": st.column_config.TextColumn("Service ID 📌", width="None", pinned=True),
         "customer_name": st.column_config.TextColumn("Customer Name", width="None"),
         "circle": st.column_config.TextColumn("Circle", width="None"),
@@ -464,14 +475,11 @@ def render_dashboard(
     }
 
     for col in all_remark_cols:
-        lbl = col.replace("remark_", "Remark ")
-        column_config[col] = st.column_config.TextColumn(lbl, width="Medium")
+        clean_lbl = col.replace("cust_remark_", "Cust Remark ").replace("asp_remark_", "ASP Remark ")
+        column_config[col] = st.column_config.TextColumn(clean_lbl, width="Medium")
 
-
-    # Create a dynamic key suffix based on whether a popup is pending or cleared
     popup_state_suffix = "active" if pending_key in st.session_state else "cleared"
 
-    # Render with the dynamic selection tracking key configuration
     event = st.dataframe(
         df_page[columns_order],
         column_config=column_config,
@@ -479,10 +487,10 @@ def render_dashboard(
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        key=f"data_table_{sheet_name}_{popup_state_suffix}" # ── FORCE CLEAR SELECTION
+        key=f"data_table_{sheet_name}_{popup_state_suffix}"
     )
 
-    # ── Trigger remark logic cleanly when row selection occurs ──
+    # ── Row Click Trigger Interception Logic ────────────────
     if allow_remark and event and event.get("selection", {}).get("rows"):
         selected_row_idx = event["selection"]["rows"][0]
         clicked_row = df_page.iloc[selected_row_idx]
@@ -491,25 +499,13 @@ def render_dashboard(
         cache_row_idx = int(clicked_row["index"])
         sid_val = str(clicked_row.get("service_id", ""))
 
-        remark_col_tmp = f"remark_{datetime.now().strftime('%Y-%m-%d')}"
-        existing_remark = ""
-        if remark_col_tmp in master_df.columns:
-            raw = master_df.at[cache_row_idx, remark_col_tmp]
-            existing_remark = "" if pd.isna(raw) or str(raw).strip() in ("", "nan") else str(raw).strip()
-
-        # ── CRITICAL FIX: Only write state if it's not already set. ──
-        # This stops the visual blinking / double-triggering look completely.
         if pending_key not in st.session_state:
             st.session_state[pending_key] = {
-                "cache_row_idx":   cache_row_idx,
-                "sheet_row":       target_sheet_row,
-                "sid_val":         sid_val,
-                "existing_remark": existing_remark,
-                "page":            st.session_state.get(get_page_key(sheet_name), 1),
+                "cache_row_idx": cache_row_idx,
+                "sheet_row":     target_sheet_row,
+                "sid_val":       sid_val,
+                "page":          st.session_state.get(get_page_key(sheet_name), 1),
             }
             st.rerun()
 
-    st.caption(
-        f"Column **{remark_col}** stores today's remarks · "
-        f"New column created daily automatically"
-    )
+    st.caption("Remarks are separated by category and cataloged daily by date structural headers.")
