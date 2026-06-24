@@ -74,7 +74,7 @@ def func1(raw_file):
         data.columns = data.columns.str.lower().str.replace(" ", "_").str.replace(".", "_").str.strip()
         
         selected_columns = [
-            "register_id", "job_id", "service_id", "customer_name",  "phone1","customer_type", "address1", "city", "state", "customer_pincode", "producttype_code", "model_code", "product_srno", "product_srno2", "company_name","provider_phone1", "circle", "customer_type", "call_date", "updatedate", "status_code",  "registration_date", "warrantytype", "invoice_no", "invoice_date"
+            "register_id", "job_id", "service_id", "customer_name",  "phone1","customer_type", "address1", "city", "state", "customer_pincode", "producttype_code", "model_code", "product_srno", "product_srno2", "company_name","provider_phone1", "circle", "customer_type", "call_date", "status_updated_date", "status_code",  "registration_date", "warrantytype", "invoice_no", "invoice_date"
         ]
         # Eliminate duplicate selected columns if any exist in array config
         selected_columns = list(dict.fromkeys(selected_columns))
@@ -82,7 +82,7 @@ def func1(raw_file):
         
         data["service_id"] = data["service_id"].astype(str).str.strip()
         data["call_date"] = pd.to_datetime(data["call_date"]).dt.normalize()
-        data["updatedate"] = pd.to_datetime(data["updatedate"]).dt.normalize()
+        data["status_updated_date"] = pd.to_datetime(data["status_updated_date"]).dt.normalize()
 
         # Fix type safety: ensure comparison uses consistent date formats
         today_date = pd.Timestamp.now().normalize()
