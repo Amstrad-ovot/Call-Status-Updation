@@ -12,7 +12,7 @@ from main import (
     checking_call_age_ch_data,
 )
 
-st.set_page_config(page_title="Service Report Generator", layout="wide")
+st.set_page_config(page_title="Service Call Status App", layout="wide")
 
 # ── 1. Login gate ─────────────────────────────────────────
 if not render_login_page():
@@ -94,6 +94,7 @@ elif page == "ho_dashboard":
         allow_remark  = True,
         region_filter = None,       # HO sees all rows
     )
+
 
 # ── CH Dashboard (both roles can view) ────────────────────
 #
