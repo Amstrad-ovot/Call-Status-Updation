@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 import gspread
 from main import connect_gsheet, show_popup
-
+import pytz
 
 # ── Cache TTL ─────────────────────────────────────────────
 
@@ -22,6 +22,7 @@ HEADER_LABELS = {
     "age_from_call_reg": "Call Age",
 }
 
+IST = pytz.timezone('Asia/Kolkata')
 
 # ── Styling ───────────────────────────────────────────────
 
@@ -64,15 +65,15 @@ def inject_table_styles():
 
 # ── User Info Banner Helper ───────────────────────────────
 
-def user_info_caption():
-    # Looks for a global or state variable. Safe fallback to state.
-    current_user = st.session_state.get("user_name", "UnknownUser")
-    parts = [f"Logged in as **{current_user}**"]
-    if st.session_state.get("user_role"):
-        parts.append(f"Role: {st.session_state['user_role']}")
-    if st.session_state.get("user_regions"):
-        parts.append(f"Regions: {st.session_state['user_regions']}")
-    st.caption("  |  ".join(parts))
+# def user_info_caption():
+#     # Looks for a global or state variable. Safe fallback to state.
+#     current_user = st.session_state.get("user_name", "UnknownUser")
+#     parts = [f"Logged in as **{current_user}**"]
+#     if st.session_state.get("user_role"):
+#         parts.append(f"Role: {st.session_state['user_role']}")
+#     if st.session_state.get("user_regions"):
+#         parts.append(f"Regions: {st.session_state['user_regions']}")
+#     st.caption("  |  ".join(parts))
 
 
 # ── Cached Data Fetching ───────────────────────────────────
@@ -166,7 +167,7 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
             else:
                 # ── Format payload with Username and Current timestamp ──
                 uname = st.session_state.get("user_name", "UnknownUser")
-                timestamp = datetime.now().strftime("%H:%M:%S")
+                timestamp = datetime.now(IST).strftime("%H:%M:%S")
                 formatted_remark = f"{uname}_{timestamp} -- {new_remark.strip()}"
 
                 _save_remark(ws=ws, row_index=row_index, remark_col=remark_col,
@@ -283,8 +284,8 @@ def render_dashboard(
     inject_table_styles()
     st.header(title)
     
-    # Render user metadata banner cleanly at the top
-    user_info_caption()
+    # # Render user metadata banner cleanly at the top
+    # user_info_caption()
 
     if not allow_remark:
         st.markdown("<div class='ro-banner'>View-only · Cannot add or edit remarks.</div>",
@@ -423,7 +424,7 @@ def render_dashboard(
         excel_data = convert_df_to_excel(df_filtered)
         st.download_button(
             label="Download Filtered Data (Excel)", data=excel_data,
-            file_name=f"Call_Status_{sheet_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            file_name=f"Call_Status_{sheet_name}_{datetime.now(IST).strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
