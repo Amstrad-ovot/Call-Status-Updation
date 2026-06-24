@@ -128,8 +128,10 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
     # 1. Generate column labels for today's entry
     # today_str = datetime.now(IST).strftime("%d_%m_%Y")
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
-    cust_col  = f"cust_remark_{today_str}"
-    asp_col   = f"asp_remark_{today_str}"
+    # cust_col  = f"cust_remark_{today_str}"
+    # asp_col   = f"asp_remark_{today_str}"
+    cust_col  = f"remark_cust_{today_str}"
+    asp_col   = f"remark_asp_{today_str}"
     
     # 2. Extract history safely directly from memory cache
     ck = f"cache_df_{sheet_name}"
@@ -445,7 +447,7 @@ def render_dashboard(
 
     # ── Parse historical remark columns sequentially ──
     all_remark_cols = sorted(
-        [c for c in master_df.columns if c.startswith("cust_remark_") or c.startswith("asp_remark_")],
+        [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")],
         key=lambda x: x.split("_")[-1] + x.split("_")[-2] + x.split("_")[-3] if len(x.split("_")) >= 4 else x
     )
 
@@ -475,7 +477,7 @@ def render_dashboard(
     }
 
     for col in all_remark_cols:
-        clean_lbl = col.replace("cust_remark_", "Cust Remark ").replace("asp_remark_", "ASP Remark ")
+        clean_lbl = col.replace("remark_cust", "Cust Remark ").replace("remark_asp", "ASP Remark ")
         column_config[col] = st.column_config.TextColumn(clean_lbl, width="Medium")
 
     popup_state_suffix = "active" if pending_key in st.session_state else "cleared"
