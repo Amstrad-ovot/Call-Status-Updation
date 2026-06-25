@@ -446,10 +446,12 @@ def render_dashboard(
         )
 
     # ── Parse historical remark columns sequentially ──
-    all_remark_cols = sorted(
-        [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")],
-        key=lambda x: x.split("_")[-1] + x.split("_")[-2] + x.split("_")[-3] if len(x.split("_")) >= 4 else x
-    )
+    # all_remark_cols = sorted(
+    #     [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")],
+    #     key=lambda x: x.split("_")[-1] + x.split("_")[-2] + x.split("_")[-3] if len(x.split("_")) >= 4 else x
+    # )
+
+    all_remark_cols = [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")]
 
     start, end = render_pagination(sheet_name, len(df_filtered), position="top")
     df_page = df_filtered.iloc[start:end].copy()
