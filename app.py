@@ -27,7 +27,6 @@ user_name = st.session_state.get("user_name", "")
 is_ho = role == "ho"
 is_ch = role == "ch"
 
-
 def user_info_caption():
     parts = [f"Logged in as **{user_name}**"]
     if st.session_state.get("user_role"):
@@ -94,14 +93,15 @@ elif page == "ho_dashboard":
         region_filter = None,       # HO sees all rows
     )
 
-
 # ── CH Dashboard (both roles can view) ────────────────────
 #
 #   CH  → allow_remark=True,  region_filter = their assigned circles
 #   HO  → allow_remark=False, region_filter = None (sees all rows, read-only)
 #
 elif page == "ch_dashboard":
+    # To fetch the user information
     user_info_caption()
+    # To render the dashboard on the page
     render_dashboard(
         sheet_name    = "CH Raw Data",
         title         = "📊 CH Dashboard",
