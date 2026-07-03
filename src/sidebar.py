@@ -1,5 +1,5 @@
 import streamlit as st
-
+from login import logout
 
 def apply_sidebar_styles():
     st.markdown("""
@@ -90,7 +90,8 @@ def apply_sidebar_styles():
             border-color: #63b3ed !important;
         }
 
-        [data-testid="stSidebar"] hr {
+        [data-testid="stSidebar"] hr {Unfiltered Nationwide Ledger
+                
             border-color: rgba(255,255,255,0.1);
             margin: 12px 0;
         }
@@ -132,8 +133,15 @@ def render_sidebar():
             btn_ch_dashboard = st.button("📊  View CH Dashboard")
             btn_upload        = False
             btn_ho_dashboard  = False
+            
+        elif role == "sales":
+            # Sales users: view HO and CH dashboards but NO upload option
+            btn_ho_dashboard = st.button("📌  View HO Dashboard")
+            btn_ch_dashboard = st.button("📊  View CH Dashboard")
+            btn_upload        = False
+            
         else:
-            # Admin / default: all tabs
+            # Admin / default: all tabs accessible
             btn_upload       = st.button("📤  Upload & Create Report")
             btn_ho_dashboard = st.button("📌  View HO Dashboard")
             btn_ch_dashboard = st.button("📊  View CH Dashboard")
@@ -142,14 +150,16 @@ def render_sidebar():
 
         # Logout always visible
         if st.button("🚪  Logout"):
-            from login import logout
             logout() 
-        st.caption("© 2025 Service App v1.0")
+        st.caption("© 2026 Service App v1.0")
 
     # ── Page state resolution ──────────────────
-    # Set default page based on role
+    # Set default routing rules based on the user's role profile
     if "page" not in st.session_state:
-        st.session_state["page"] = "ch_dashboard" if role == "ch" else "upload"
+        if role in ("ch", "sales"):
+            st.session_state["page"] = "ch_dashboard"
+        else:
+            st.session_state["page"] = "upload"
 
     if btn_upload:
         st.session_state["page"] = "upload"
@@ -158,8 +168,12 @@ def render_sidebar():
     if btn_ch_dashboard:
         st.session_state["page"] = "ch_dashboard"
 
-    # Guard: CH user should never land on upload/ho pages
-    if role == "ch" and st.session_state["page"] not in ("ch_dashboard",):
+    # Guard: CH and Sales users must be blocked from wandering into the upload view state
+    if role in ("ch", "sales") and st.session_state["page"] == "upload":
+        st.session_state["page"] = "ch_dashboard"
+        
+    # Guard: CH users specifically cannot access HO dashboard
+    if role == "ch" and st.session_state["page"] == "ho_dashboard":
         st.session_state["page"] = "ch_dashboard"
 
     return st.session_state["page"]
