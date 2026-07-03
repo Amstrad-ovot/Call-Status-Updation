@@ -12,7 +12,7 @@ import pytz
 CACHE_TTL_SECONDS = 60
 ROWS_PER_PAGE     = 10
 
-FIXED_COLS = ["service_id", "customer_name", "circle", "call_date", "age_from_call_reg"]
+FIXED_COLS = ["service_id", "customer_name", "circle", "call_date", "status_code", "status_updated_date", "age_from_call_reg"]
 
 HEADER_LABELS = {
     "service_id":        "Service ID",
@@ -20,6 +20,8 @@ HEADER_LABELS = {
     "circle":            "Circle",
     "call_date":         "Call Date",
     "age_from_call_reg": "Call Age",
+    "status_code" : "Status Code",
+    "status_updated_date" : "Status Updated Date",
 }
 
 IST = pytz.timezone('Asia/Kolkata')
@@ -126,10 +128,7 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
                   sheet_name, headers, pending_key):
     
     # 1. Generate column labels for today's entry
-    # today_str = datetime.now(IST).strftime("%d_%m_%Y")
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
-    # cust_col  = f"cust_remark_{today_str}"
-    # asp_col   = f"asp_remark_{today_str}"
     cust_col  = f"remark_cust_{today_str}"
     asp_col   = f"remark_asp_{today_str}"
     
@@ -310,8 +309,13 @@ def render_dashboard(
     inject_table_styles()
     st.header(title)
 
+    # Force view-only settings if the user has a 'sales' role
+    user_role = st.session_state.get("user_role", "").strip().lower()
+    if user_role == "sales":
+        allow_remark = False
+
     if not allow_remark:
-        st.markdown("<div class='ro-banner'>View-only · Cannot add or edit remarks.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='ro-banner'>⚠️ View-only · Cannot add or edit remarks.</div>", unsafe_allow_html=True)
 
     spreadsheet = connect_gsheet()
     if not spreadsheet:
@@ -323,8 +327,15 @@ def render_dashboard(
         st.info("No data available in this sheet yet.")
         return
 
-    # ── Region filter ─────────────────────────────────────
+    # Check for global dashboard override flag: "all india"
+    is_all_india = False
     if region_filter is not None:
+        clean_regions = [str(r).strip().lower() for r in region_filter]
+        if "all india" in clean_regions:
+            is_all_india = True
+
+    # ── Region filter evaluation ──────────────────────────────
+    if region_filter is not None and not is_all_india:
         if len(region_filter) == 0:
             st.warning("No regions are assigned to your account.")
             return
@@ -344,12 +355,18 @@ def render_dashboard(
             unsafe_allow_html=True,
         )
     else:
+        # Bypasses filter arrays completely if region_filter is None OR contains "All India"
         df_view = master_df
+        if is_all_india:
+            st.markdown(
+                "<div class='region-banner'>🌍 Scope: <strong>All India</strong></div>", 
+                unsafe_allow_html=True
+            )
 
     pending_key = f"pending_remark_{sheet_name}"
 
     # ── Process dynamic popup triggers safely via standard session_state ──
-    if pending_key in st.session_state:
+    if allow_remark and pending_key in st.session_state:
         p = st.session_state[pending_key]
         if "cache_row_idx" not in p or "sheet_row" not in p:
             st.session_state.pop(pending_key, None)
@@ -358,6 +375,9 @@ def render_dashboard(
             ws=ws, row_index=p["sheet_row"], cache_row_idx=p["cache_row_idx"],
             service_id=p["sid_val"], sheet_name=sheet_name, headers=headers, pending_key=pending_key,
         )
+    elif not allow_remark:
+        # Prevent stray popups from remaining in memory for view-only profiles
+        st.session_state.pop(pending_key, None)
 
     render_cache_controls(sheet_name)
 
@@ -446,13 +466,8 @@ def render_dashboard(
         )
 
     # ── Parse historical remark columns sequentially ──
-    # all_remark_cols = sorted(
-    #     [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")],
-    #     key=lambda x: x.split("_")[-1] + x.split("_")[-2] + x.split("_")[-3] if len(x.split("_")) >= 4 else x
-    # )
-
     all_remark_cols = [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")]
-
+    
     start, end = render_pagination(sheet_name, len(df_filtered), position="top")
     df_page = df_filtered.iloc[start:end].copy()
 
@@ -476,6 +491,8 @@ def render_dashboard(
         "circle": st.column_config.TextColumn("Circle", width="None"),
         "call_date": st.column_config.TextColumn("Call Date", width="None"),
         "age_from_call_reg": st.column_config.TextColumn("Call Age", width="None"),
+        "status_code": st.column_config.TextColumn("Status Code", width="None"),
+        "status_updated_date": st.column_config.TextColumn("Status Updated Date", width="None"),
     }
 
     for col in all_remark_cols:
@@ -484,13 +501,17 @@ def render_dashboard(
 
     popup_state_suffix = "active" if pending_key in st.session_state else "cleared"
 
+    # Toggle table-level interactive features depending on access parameters
+    table_selection_mode = "single-row" if allow_remark else "disabled"
+    table_on_select      = "rerun" if allow_remark else "ignore"
+    
     event = st.dataframe(
         df_page[columns_order],
         column_config=column_config,
         use_container_width=True,
         hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
+        on_select=table_on_select,
+        selection_mode=table_selection_mode,
         key=f"data_table_{sheet_name}_{popup_state_suffix}"
     )
 
@@ -513,3 +534,4 @@ def render_dashboard(
             st.rerun()
 
     st.caption("Remarks are separated by category and cataloged daily by date structural headers.")
+    
