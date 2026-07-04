@@ -20,7 +20,7 @@ HEADER_LABELS = {
     "circle":            "Circle",
     "call_date":         "Call Date",
     "age_from_call_reg": "Call Age",
-    "status_code" : "Status Code",
+    "status_code" :      "Status Code",
     "status_updated_date" : "Status Updated Date",
 }
 
@@ -121,21 +121,21 @@ def render_cache_controls(sheet_name: str):
             st.rerun()
 
 
-# ── Dual Remark Dialog Component ──────────────────────────
+# ── Tri-Remark Dialog Component ──────────────────────────
 
 @st.dialog("Update Remarks", width="medium", dismissible=False)
 def remark_dialog(ws, row_index, cache_row_idx, service_id,
                   sheet_name, headers, pending_key):
     
-    # 1. Generate column labels for today's entry
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
     cust_col  = f"remark_cust_{today_str}"
     asp_col   = f"remark_asp_{today_str}"
+    int_col   = f"remark_internalTeam_{today_str}"
     
-    # 2. Extract history safely directly from memory cache
     ck = f"cache_df_{sheet_name}"
     existing_cust = ""
     existing_asp  = ""
+    existing_int  = ""
     
     if ck in st.session_state and cache_row_idx is not None:
         master_df = st.session_state[ck]
@@ -145,11 +145,13 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
         if asp_col in master_df.columns:
             val_a = master_df.at[cache_row_idx, asp_col]
             existing_asp = "" if pd.isna(val_a) or str(val_a).strip() in ("", "nan") else str(val_a).strip()
+        if int_col in master_df.columns:
+            val_i = master_df.at[cache_row_idx, int_col]
+            existing_int = "" if pd.isna(val_i) or str(val_i).strip() in ("", "nan") else str(val_i).strip()
 
     st.markdown(f"**Service ID:** `{service_id}`")
     st.divider()
 
-    # 3. Customer Input Section
     st.markdown("**💬 Customer Remark History**")
     if existing_cust:
         st.info(existing_cust)
@@ -158,15 +160,21 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
 
     st.divider()
 
-    # 4. ASP Input Section
     st.markdown("**🛠️ ASP Remark History**")
     if existing_asp:
         st.info(existing_asp)
     new_asp = st.text_area("ASP Remark Input", placeholder="Type ASP remark here...", 
                            height=100, label_visibility="collapsed", key="dialog_asp_input")
 
-    # 5. Overwrite Checkbox
-    if existing_cust or existing_asp:
+    st.divider()
+
+    st.markdown("**👥 Internal Team Remark History**")
+    if existing_int:
+        st.info(existing_int)
+    new_int = st.text_area("Internal Team Remark Input", placeholder="Type internal team remark here...", 
+                           height=100, label_visibility="collapsed", key="dialog_int_input")
+
+    if existing_cust or existing_asp or existing_int:
         overwrite = st.checkbox("Append entries to existing history tracker", value=True)
     else:
         overwrite = True
@@ -174,31 +182,34 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Save Remarks", use_container_width=True, type="primary"):
-            if not new_cust.strip() and not new_asp.strip():
-                st.warning("Both remark entries cannot be empty.")
-            elif (existing_cust or existing_asp) and not overwrite:
+            if not new_cust.strip() and not new_asp.strip() and not new_int.strip():
+                st.warning("All remark entries cannot be empty.")
+            elif (existing_cust or existing_asp or existing_int) and not overwrite:
                 st.warning("Please toggle the append validation checkbox.")
             else:
                 uname = st.session_state.get("user_name", "UnknownUser")
                 timestamp = datetime.now(IST).strftime("%H:%M:%S")
                 
-                # Update Customer Column
                 if new_cust.strip():
                     payload_cust = f"{uname}_{timestamp} -- {new_cust.strip()}"
                     final_cust = f"{existing_cust}\n{payload_cust}" if (existing_cust and overwrite) else payload_cust
-                    
                     c_idx = headers.index(cust_col) + 1 if cust_col in headers else None
                     _save_remark(ws=ws, row_index=row_index, remark_col=cust_col, col_idx=c_idx,
                                  remark_text=final_cust, sheet_name=sheet_name, headers=headers, cache_row_idx=cache_row_idx)
 
-                # Update ASP Column
                 if new_asp.strip():
                     payload_asp = f"{uname}_{timestamp} -- {new_asp.strip()}"
                     final_asp = f"{existing_asp}\n{payload_asp}" if (existing_asp and overwrite) else payload_asp
-                    
                     a_idx = headers.index(asp_col) + 1 if asp_col in headers else None
                     _save_remark(ws=ws, row_index=row_index, remark_col=asp_col, col_idx=a_idx,
                                  remark_text=final_asp, sheet_name=sheet_name, headers=headers, cache_row_idx=cache_row_idx)
+
+                if new_int.strip():
+                    payload_int = f"{uname}_{timestamp} -- {new_int.strip()}"
+                    final_int = f"{existing_int}\n{payload_int}" if (existing_int and overwrite) else payload_int
+                    i_idx = headers.index(int_col) + 1 if int_col in headers else None
+                    _save_remark(ws=ws, row_index=row_index, remark_col=int_col, col_idx=i_idx,
+                                 remark_text=final_int, sheet_name=sheet_name, headers=headers, cache_row_idx=cache_row_idx)
 
                 st.session_state.pop(pending_key, None)
                 st.rerun()
@@ -309,7 +320,6 @@ def render_dashboard(
     inject_table_styles()
     st.header(title)
 
-    # Force view-only settings if the user has a 'sales' role
     user_role = st.session_state.get("user_role", "").strip().lower()
     if user_role == "sales":
         allow_remark = False
@@ -327,14 +337,48 @@ def render_dashboard(
         st.info("No data available in this sheet yet.")
         return
 
-    # Check for global dashboard override flag: "all india"
+# ── CCO Role Handling Logic ─────────────────────────────────
+    if user_role == "cco":
+        # Only apply code-wise filter if it's the 'ho' data sheet
+        if sheet_name.lower() == "ho raw data":
+            if "Code" not in master_df.columns:
+                st.error("Column 'Code' not found in data sheet to filter for CCO role.")
+                return
+            
+            user_code_raw = (
+                st.session_state.get("user_code") 
+                if st.session_state.get("user_code") is not None 
+                else st.session_state.get("code", "")
+            )
+            
+            if isinstance(user_code_raw, pd.Series):
+                user_code_raw = user_code_raw.iloc[0] if not user_code_raw.empty else ""
+
+            if user_code_raw or user_code_raw == 0:
+                if isinstance(user_code_raw, list):
+                    allowed_codes = [str(c).strip().lower() for c in user_code_raw]
+                elif isinstance(user_code_raw, (int, float)):
+                    allowed_codes = [str(int(user_code_raw)).strip()]
+                else:
+                    allowed_codes = [c.strip().lower() for c in str(user_code_raw).split(",") if c.strip()]
+                
+                master_df = master_df[
+                    master_df["Code"].astype(str).str.strip().str.lower().isin(allowed_codes)
+                ]
+            else:
+                st.warning("No tracking code assigned to your CCO profile account.")
+                st.write("Debug Info — Session State keys available:", list(st.session_state.keys()))
+                return
+        else:
+            # For 'ch' or any other sheets, CCO sees all records without code constraints
+            pass
+
     is_all_india = False
     if region_filter is not None:
         clean_regions = [str(r).strip().lower() for r in region_filter]
         if "all india" in clean_regions:
             is_all_india = True
 
-    # ── Region filter evaluation ──────────────────────────────
     if region_filter is not None and not is_all_india:
         if len(region_filter) == 0:
             st.warning("No regions are assigned to your account.")
@@ -355,7 +399,6 @@ def render_dashboard(
             unsafe_allow_html=True,
         )
     else:
-        # Bypasses filter arrays completely if region_filter is None OR contains "All India"
         df_view = master_df
         if is_all_india:
             st.markdown(
@@ -365,7 +408,6 @@ def render_dashboard(
 
     pending_key = f"pending_remark_{sheet_name}"
 
-    # ── Process dynamic popup triggers safely via standard session_state ──
     if allow_remark and pending_key in st.session_state:
         p = st.session_state[pending_key]
         if "cache_row_idx" not in p or "sheet_row" not in p:
@@ -376,7 +418,6 @@ def render_dashboard(
             service_id=p["sid_val"], sheet_name=sheet_name, headers=headers, pending_key=pending_key,
         )
     elif not allow_remark:
-        # Prevent stray popups from remaining in memory for view-only profiles
         st.session_state.pop(pending_key, None)
 
     render_cache_controls(sheet_name)
@@ -465,13 +506,13 @@ def render_dashboard(
             use_container_width=True,
         )
 
-    # ── Parse historical remark columns sequentially ──
-    all_remark_cols = [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp")]
+    # Scans for existing headers dynamically matching all three patterns
+    all_remark_cols = [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp") or c.startswith("remark_internalTeam")]
     
     start, end = render_pagination(sheet_name, len(df_filtered), position="top")
     df_page = df_filtered.iloc[start:end].copy()
 
-    hint = " · Click a row anywhere to add/edit customer or ASP remarks" if allow_remark else ""
+    hint = " · Click a row anywhere to add/edit customer, ASP or internal Team remarks" if allow_remark else ""
     st.caption(
         f"Showing rows {start + 1}–{end} of {len(df_filtered)}"
         + (f" (filtered from {len(df_view)} total)" if (search or selected_circle != "All") else "")
@@ -496,12 +537,11 @@ def render_dashboard(
     }
 
     for col in all_remark_cols:
-        clean_lbl = col.replace("remark_cust", "Cust Remark ").replace("remark_asp", "ASP Remark ")
+        clean_lbl = col.replace("remark_cust", "Cust Remark ").replace("remark_asp", "ASP Remark ").replace("remark_internalTeam", "Internal Team Remark ")
         column_config[col] = st.column_config.TextColumn(clean_lbl, width="Medium")
 
     popup_state_suffix = "active" if pending_key in st.session_state else "cleared"
 
-    # Toggle table-level interactive features depending on access parameters
     table_selection_mode = "single-row" if allow_remark else "disabled"
     table_on_select      = "rerun" if allow_remark else "ignore"
     
@@ -534,4 +574,3 @@ def render_dashboard(
             st.rerun()
 
     st.caption("Remarks are separated by category and cataloged daily by date structural headers.")
-    
