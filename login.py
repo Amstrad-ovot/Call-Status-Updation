@@ -182,9 +182,12 @@ def render_login_page():
                         st.session_state["user_role"]     = str(user.get("Role", "")).strip()
                         st.session_state["user_regions"]  = str(user.get("Regions", "")).strip()
                         st.session_state["user_mobile"]   = mobile.strip()
+                        st.session_state["user_code"]  = str(user.get("Code", "")).strip()
                         st.toast(f"✅ Welcome, {st.session_state['user_name']}!")
                         st.rerun()
                     else:
                         st.error("❌ Invalid mobile number or password. Please try again.")
 
     return st.session_state.get("authenticated", False)
+
+
