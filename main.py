@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+from gspread.utils import rowcol_to_a1
 
 # ──────────────────────────────────────────────
 # Connection & UI Layer
@@ -281,6 +282,128 @@ def update_ch_raw_data():
     except Exception as e:
         print(f"Error in update_ch_raw_data: {e}")
         show_popup(f"Error While Updating CH Raw Data: {e}", type="error")
+
+# Unable to add data in cc_ho_sheet
+# def update_ch_raw_data():
+#     try:
+#         print("Inside update ch raw data function...")
+#         spreadsheet = connect_gsheet()
+
+#         detail_ws = spreadsheet.worksheet("Detailed_Data")
+#         detail_data = detail_ws.get_all_values()
+#         if len(detail_data) <= 1:
+#             show_popup("Detailed_Data sheet is empty!", type="info")
+#             return
+
+#         df_detail = pd.DataFrame(detail_data[1:], columns=detail_data[0])
+#         df_detail.columns = df_detail.columns.str.lower().str.strip().str.replace(" ", "_")
+#         df_detail = df_detail.loc[:, ~df_detail.columns.duplicated()]
+        
+#         df_detail["service_id"] = df_detail["service_id"].astype(str).str.strip()
+#         df_filtered = df_detail[df_detail["7+_calls"].astype(str) == "1"].copy()
+
+#         if df_filtered.empty:
+#             show_popup("No 7+ calls data found!", type="info")
+#             return
+
+#         all_detail_ids = set(df_detail["service_id"])
+#         ageing_sheet_name = "CH Raw Data"
+
+#         try:
+#             ageing_ws = spreadsheet.worksheet(ageing_sheet_name)
+#             ageing_data = ageing_ws.get_all_values()
+
+#             if ageing_data and len(ageing_data) > 1:
+#                 df_ageing_existing = pd.DataFrame(ageing_data[1:], columns=ageing_data[0])
+#                 df_ageing_existing.columns = df_ageing_existing.columns.str.lower().str.strip().str.replace(" ", "_")
+#                 df_ageing_existing = df_ageing_existing.loc[:, ~df_ageing_existing.columns.duplicated()]
+#                 df_ageing_existing["service_id"] = df_ageing_existing["service_id"].astype(str).str.strip()
+#             else:
+#                 df_ageing_existing = pd.DataFrame()
+#         except gspread.WorksheetNotFound:
+#             ageing_ws = spreadsheet.add_worksheet(ageing_sheet_name, rows=5000, cols=30)
+#             df_ageing_existing = pd.DataFrame()
+
+#         if df_ageing_existing.empty:
+#             data_to_write = [df_filtered.columns.tolist()] + df_filtered.fillna("").astype(str).values.tolist()
+#             ageing_ws.update(data_to_write)
+#             show_popup(f"CH Raw Data sheet created with {len(df_filtered)} records!", type="success")
+#             return
+
+#         # ── Fast Vectorized Move handling ──
+#         existing_ageing_ids = set(df_ageing_existing["service_id"])
+#         moved_ids = existing_ageing_ids - all_detail_ids
+#         df_moved = df_ageing_existing[df_ageing_existing["service_id"].isin(moved_ids)].copy()
+
+#         print("The dimension of moved dataframe is:", df_moved.shape)
+        
+#         df_ageing_existing = df_ageing_existing[~df_ageing_existing["service_id"].isin(moved_ids)].copy()
+
+#         if not df_moved.empty:
+#             cc_sheet_name = "cc_ch_data"
+#             try:
+#                 cc_ws = spreadsheet.worksheet(cc_sheet_name)
+#                 cc_data = cc_ws.get_all_values()
+#                 if cc_data and len(cc_data) > 1:
+#                     df_cc_existing = pd.DataFrame(cc_data[1:], columns=cc_data[0])
+#                     df_cc_existing.columns = df_cc_existing.columns.str.lower().str.strip().str.replace(" ", "_")
+#                     df_cc_existing = df_cc_existing.loc[:, ~df_cc_existing.columns.duplicated()]
+#                     df_cc_existing["service_id"] = df_cc_existing["service_id"].astype(str).str.strip()
+#                 else:
+#                     df_cc_existing = pd.DataFrame()
+#             except gspread.WorksheetNotFound:
+#                 cc_ws = spreadsheet.add_worksheet(cc_sheet_name, rows=5000, cols=30)
+#                 df_cc_existing = pd.DataFrame()
+
+#             df_moved_new = df_moved[~df_moved["service_id"].isin(set(df_cc_existing["service_id"])) if not df_cc_existing.empty else []].copy()
+            
+#             if df_cc_existing.empty:
+#                 cc_data_to_write = [df_moved_new.columns.tolist()] + df_moved_new.fillna("").astype(str).values.tolist()
+#                 cc_ws.update(cc_data_to_write)
+#             elif not df_moved_new.empty:
+#                 df_moved_new = df_moved_new.reindex(columns=df_cc_existing.columns, fill_value="")
+#                 df_cc_existing = pd.concat([df_cc_existing, df_moved_new], ignore_index=True)
+#                 cc_final_data = [df_cc_existing.columns.tolist()] + df_cc_existing.fillna("").astype(str).values.tolist()
+#                 cc_ws.clear()
+#                 cc_ws.update(cc_final_data)
+
+#         # ── Fast Vectorized Update Engine (Replaces slow loops) ──
+#         ageing_cols = df_ageing_existing.columns.tolist()
+#         remarks_cols = [col for col in ageing_cols if col.startswith("remark")]
+#         non_remarks_cols = [col for col in ageing_cols if col not in remarks_cols and col != "service_id"]
+
+#         # Track modifications counts securely
+#         updated_count = len(df_filtered[df_filtered["service_id"].isin(set(df_ageing_existing["service_id"]))])
+#         df_ageing_new = df_filtered[~df_filtered["service_id"].isin(set(df_ageing_existing["service_id"]))].copy()
+
+#         # Update matching IDs using a clean indexing merge approach
+#         df_ageing_existing.set_index("service_id", inplace=True)
+#         df_filtered_updates = df_filtered[df_filtered["service_id"].isin(df_ageing_existing.index)].set_index("service_id")
+        
+#         # Overwrite all columns except remarks natively
+#         available_update_cols = [c for c in non_remarks_cols if c in df_filtered_updates.columns]
+#         df_ageing_existing.loc[df_filtered_updates.index, available_update_cols] = df_filtered_updates[available_update_cols]
+#         df_ageing_existing.reset_index(inplace=True)
+
+#         # Append Brand New Rows safely
+#         if not df_ageing_new.empty:
+#             df_ageing_new = df_ageing_new.reindex(columns=ageing_cols, fill_value="")
+#             df_ageing_existing = pd.concat([df_ageing_existing, df_ageing_new], ignore_index=True)
+
+#         # Bulk write everything to DB in exactly 1 API call
+#         final_data = [df_ageing_existing.columns.tolist()] + df_ageing_existing.fillna("").astype(str).values.tolist()
+#         ageing_ws.clear()
+#         ageing_ws.update(final_data)
+
+#         show_popup(
+#             f"CH Raw Data updated! {updated_count} rows updated, {len(df_ageing_new)} new rows added, {len(df_moved)} rows moved to cc_ch_data.",
+#             type="success"
+#         )
+
+#     except Exception as e:
+#         print(f"Error in update_ch_raw_data: {e}")
+#         show_popup(f"Error While Updating CH Raw Data: {e}", type="error")
+
 
 def update_ho_raw_data():
     try:
@@ -685,3 +808,84 @@ def checking_call_age_ch_data():
     except Exception as e:
         print(f"Error in checking_call_age_ch_data: {e}")
         show_popup(f"Error in CH Age Check: {e}", type="error")
+
+def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
+    try:
+        # ── 1. Fetch current HO Data ──────────────────────────────────────
+        spreadsheet = connect_gsheet()
+        ho_ws = spreadsheet.worksheet("HO Raw Data")
+        ho_data = ho_ws.get_all_values()
+
+        if not ho_data or len(ho_data) <= 1:
+            raise ValueError("HO Raw Data sheet is empty or contains no rows.")
+
+        headers = [col.strip() for col in ho_data[0]]
+        normalized_headers = [col.lower().replace(" ", "_") for col in headers]
+
+        # Read into DataFrame using original headers to preserve state
+        ho_df = pd.DataFrame(ho_data[1:], columns=headers)
+        
+        # ── 2. Normalize Incoming Excel Data ─────────────────────────────
+        assigned_df.columns = assigned_df.columns.str.lower().str.strip().str.replace(" ", "_")
+        
+        if "service_id" not in assigned_df.columns or "code" not in assigned_df.columns:
+            print("Error: Uploaded file missing 'service_id' or 'code' columns.")
+            return False
+
+        assigned_df["service_id"] = assigned_df["service_id"].astype(str).str.strip()
+        assigned_df["code"] = assigned_df["code"].astype(str).str.strip()
+        assigned_map = assigned_df.dropna(subset=["service_id"]).set_index("service_id")["code"].to_dict()
+
+        # Find column mappings using case/space-insensitive match
+        service_id_orig_col = headers[normalized_headers.index("service_id")]
+
+        # ── 3. Handle 'Code' Column Positioning & Index ──────────────────
+        if "code" not in normalized_headers:
+            # If 'code' column doesn't exist, we must add it to the Google Sheet structure
+            if "15+_calls" in normalized_headers:
+                target_col_idx = normalized_headers.index("15+_calls") + 2  # 1-based index + 1 right after
+                header_title = "Code"
+            else:
+                target_col_idx = len(headers) + 1
+                header_title = "Code"
+            
+            # Insert column in the Google Sheet structure
+            ho_ws.insert_cols([[header_title]], col=target_col_idx)
+            
+            # Re-fetch headers and indices to sync up
+            ho_data = ho_ws.get_all_values()
+            headers = [col.strip() for col in ho_data[0]]
+            normalized_headers = [col.lower().replace(" ", "_") for col in headers]
+            ho_df = pd.DataFrame(ho_data[1:], columns=headers)
+
+        # Get exact 1-based index of the Code column
+        code_col_idx = normalized_headers.index("code") + 1
+        code_orig_col = headers[code_col_idx - 1]
+
+        # ── 4. Match and Update local DataFrame column ───────────────────
+        ho_df[service_id_orig_col] = ho_df[service_id_orig_col].astype(str).str.strip()
+        
+        # Calculate new codes while safely handling preexisting values
+        ho_df[code_orig_col] = ho_df[service_id_orig_col].map(assigned_map).fillna(ho_df[code_orig_col]).replace("nan", "")
+
+        # ── 5. Push ONLY the Code Column back to Google Sheets ───────────
+        # Extract only the calculated Code values as a list of lists (column format)
+        code_values_to_upload = [[val] for val in ho_df[code_orig_col].tolist()]
+        
+        # Define range starting from Row 2 (skipping header) to the last row
+        start_row = 2
+        end_row = start_row + len(code_values_to_upload) - 1
+        
+        # Format update range dynamically using column indexes (e.g., "E2:E100")
+        range_start = rowcol_to_a1(start_row, code_col_idx)
+        range_end = rowcol_to_a1(end_row, code_col_idx)
+        update_range = f"{range_start}:{range_end}"
+
+        # Single batch update targeted strictly at that range
+        ho_ws.update(range_name=update_range, values=code_values_to_upload)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Backend processing error: {e}")
+        return False
