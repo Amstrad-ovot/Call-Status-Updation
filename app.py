@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+
 from src.sidebar import render_sidebar
 from login import render_login_page
 from circlehead import render_dashboard
@@ -9,6 +10,7 @@ from main import (
     update_ch_raw_data,
     update_ho_raw_data,
     checking_call_age_ch_data,
+    update_call_assignment_in_ho
 )
 
 st.set_page_config(page_title="Service Call Status App", layout="wide")
@@ -53,6 +55,35 @@ def get_ch_regions() -> list[str] | None:
 # ── 4. Pages ──────────────────────────────────────────────
 
 # ── Upload (HO only) ──────────────────────────────────────
+# if page == "upload":
+#     if is_ch:
+#         access_denied()
+
+#     st.header("📤 Upload File & Create Report")
+#     user_info_caption()
+
+#     uploaded_raw_file = st.file_uploader(
+#         "Choose the Raw Data Excel file", type=["xlsx"]
+#     )
+
+#     if uploaded_raw_file is not None:
+#         if st.button("Upload Data"):
+#             with st.spinner("Processing data and pushing to Database..."):
+#                 try:
+#                     checking_call_age_ch_data()
+#                     final_df = func1(uploaded_raw_file)
+#                     if isinstance(final_df, pd.DataFrame):
+#                         update_ch_raw_data()
+#                         update_ho_raw_data()
+#                         st.success("✅ Data updated in Database!")
+#                 except Exception as e:
+#                     st.error(f"Error during processing: {e}")
+
+#     st.divider()
+
+# ── 4. Pages ──────────────────────────────────────────────
+
+# ── Upload (HO only) ──────────────────────────────────────
 if page == "upload":
     if is_ch:
         access_denied()
@@ -61,7 +92,7 @@ if page == "upload":
     user_info_caption()
 
     uploaded_raw_file = st.file_uploader(
-        "Choose the Raw Data Excel file", type=["xlsx"]
+        "Choose the Raw Data Excel file", type=["xlsx"], key="raw_file"
     )
 
     if uploaded_raw_file is not None:
@@ -79,6 +110,36 @@ if page == "upload":
 
     st.divider()
 
+    st.header("📤 Upload Call Assigned File")
+    # user_info_caption()
+
+    uploaded_call_assigned_file = st.file_uploader(
+        "Choose the Call Assigned Data Excel file", type=["xlsx"], key="assigned_file"
+    )
+
+    if uploaded_call_assigned_file is not None:
+        if st.button("Upload Call Assigned Data"):
+            with st.spinner("Processing assignments and updating HO Raw Data..."):
+                try:
+                    # 1. Read the newly uploaded file
+                    assigned_df = pd.read_excel(uploaded_call_assigned_file)
+                    assigned_df.columns = assigned_df.columns.str.strip().str.lower().str.replace(" ","_")
+                    
+                    # Basic validation to ensure required columns exist
+                    if "service_id" not in assigned_df.columns or "code" not in assigned_df.columns:
+                        st.error("❌ The uploaded file must contain 'service_id' and 'code' columns.")
+                    else:
+                        
+                        success = update_call_assignment_in_ho(assigned_df)
+                        if success:
+                            st.success("✅ Call Assigned data updated in HO Raw Data successfully!")
+                        else:
+                            st.error("❌ Failed to update HO Raw Data.")
+                            
+                except Exception as e:
+                    st.error(f"Error during processing: {e}")
+
+    st.divider()
 
 # ── HO Dashboard (HO only) ────────────────────────────────
 elif page == "ho_dashboard":
