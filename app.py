@@ -51,36 +51,6 @@ def get_ch_regions() -> list[str] | None:
         return []                       # CH with nothing assigned → sees nothing
     return [r.strip() for r in str(raw).split(",") if r.strip()]
 
-
-# ── 4. Pages ──────────────────────────────────────────────
-
-# ── Upload (HO only) ──────────────────────────────────────
-# if page == "upload":
-#     if is_ch:
-#         access_denied()
-
-#     st.header("📤 Upload File & Create Report")
-#     user_info_caption()
-
-#     uploaded_raw_file = st.file_uploader(
-#         "Choose the Raw Data Excel file", type=["xlsx"]
-#     )
-
-#     if uploaded_raw_file is not None:
-#         if st.button("Upload Data"):
-#             with st.spinner("Processing data and pushing to Database..."):
-#                 try:
-#                     checking_call_age_ch_data()
-#                     final_df = func1(uploaded_raw_file)
-#                     if isinstance(final_df, pd.DataFrame):
-#                         update_ch_raw_data()
-#                         update_ho_raw_data()
-#                         st.success("✅ Data updated in Database!")
-#                 except Exception as e:
-#                     st.error(f"Error during processing: {e}")
-
-#     st.divider()
-
 # ── 4. Pages ──────────────────────────────────────────────
 
 # ── Upload (HO only) ──────────────────────────────────────
