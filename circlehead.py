@@ -339,11 +339,15 @@ def render_dashboard(
 
 # ── CCO Role Handling Logic ─────────────────────────────────
     if user_role == "cco":
-        # Only apply code-wise filter if it's the 'ho' data sheet
         if sheet_name.lower() == "ho raw data":
-            if "Code" not in master_df.columns:
+            # Find the actual exact casing of the 'code' column dynamically
+            code_col_match = [c for c in master_df.columns if c.strip().lower() == "code"]
+            
+            if not code_col_match:
                 st.error("Column 'Code' not found in data sheet to filter for CCO role.")
                 return
+            
+            actual_code_column = code_col_match[0]
             
             user_code_raw = (
                 st.session_state.get("user_code") 
@@ -355,22 +359,30 @@ def render_dashboard(
                 user_code_raw = user_code_raw.iloc[0] if not user_code_raw.empty else ""
 
             if user_code_raw or user_code_raw == 0:
+                # Helper function to strip '.0' from floats represented as strings
+                def clean_code_string(val):
+                    val_str = str(val).strip().lower()
+                    if val_str.endswith('.0'):
+                        return val_str[:-2]
+                    return val_str
+
+                # 1. Normalize allowed session codes
                 if isinstance(user_code_raw, list):
-                    allowed_codes = [str(c).strip().lower() for c in user_code_raw]
+                    allowed_codes = [clean_code_string(c) for c in user_code_raw]
                 elif isinstance(user_code_raw, (int, float)):
-                    allowed_codes = [str(int(user_code_raw)).strip()]
+                    allowed_codes = [clean_code_string(int(user_code_raw))]
                 else:
-                    allowed_codes = [c.strip().lower() for c in str(user_code_raw).split(",") if c.strip()]
+                    allowed_codes = [clean_code_string(c) for c in str(user_code_raw).split(",") if c.strip()]
                 
+                # 2. Normalize the column values in master_df on the fly and filter
                 master_df = master_df[
-                    master_df["Code"].astype(str).str.strip().str.lower().isin(allowed_codes)
+                    master_df[actual_code_column].astype(str).apply(clean_code_string).isin(allowed_codes)
                 ]
             else:
                 st.warning("No tracking code assigned to your CCO profile account.")
                 st.write("Debug Info — Session State keys available:", list(st.session_state.keys()))
                 return
         else:
-            # For 'ch' or any other sheets, CCO sees all records without code constraints
             pass
 
     is_all_india = False
@@ -574,3 +586,4 @@ def render_dashboard(
             st.rerun()
 
     st.caption("Remarks are separated by category and cataloged daily by date structural headers.")
+
