@@ -825,15 +825,31 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
         # Read into DataFrame using original headers to preserve state
         ho_df = pd.DataFrame(ho_data[1:], columns=headers)
         
+        # FIX: Safeguard against duplicate columns in HO sheet
+        ho_df = ho_df.loc[:, ~ho_df.columns.duplicated()]
+        
         # ── 2. Normalize Incoming Excel Data ─────────────────────────────
         assigned_df.columns = assigned_df.columns.str.lower().str.strip().str.replace(" ", "_")
+        
+        # FIX: Safeguard against duplicate columns in uploaded file
+        assigned_df = assigned_df.loc[:, ~assigned_df.columns.duplicated()]
         
         if "service_id" not in assigned_df.columns or "code" not in assigned_df.columns:
             print("Error: Uploaded file missing 'service_id' or 'code' columns.")
             return False
 
+        # Helper function to strip '.0' from float strings safely
+        def clean_code_string(val):
+            val_str = str(val).strip()
+            if val_str.endswith('.0'):
+                return val_str[:-2]
+            return val_str
+
         assigned_df["service_id"] = assigned_df["service_id"].astype(str).str.strip()
-        assigned_df["code"] = assigned_df["code"].astype(str).str.strip()
+        
+        # FIX: Clean the incoming codes to remove .0 before mapping
+        assigned_df["code"] = assigned_df["code"].astype(str).apply(clean_code_string)
+        
         assigned_map = assigned_df.dropna(subset=["service_id"]).set_index("service_id")["code"].to_dict()
 
         # Find column mappings using case/space-insensitive match
@@ -857,6 +873,7 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
             headers = [col.strip() for col in ho_data[0]]
             normalized_headers = [col.lower().replace(" ", "_") for col in headers]
             ho_df = pd.DataFrame(ho_data[1:], columns=headers)
+            ho_df = ho_df.loc[:, ~ho_df.columns.duplicated()] # Re-apply deduplication
 
         # Get exact 1-based index of the Code column
         code_col_idx = normalized_headers.index("code") + 1
@@ -867,6 +884,9 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
         
         # Calculate new codes while safely handling preexisting values
         ho_df[code_orig_col] = ho_df[service_id_orig_col].map(assigned_map).fillna(ho_df[code_orig_col]).replace("nan", "")
+        
+        # FIX: Also clean pre-existing codes in the sheet just in case they contain '.0'
+        ho_df[code_orig_col] = ho_df[code_orig_col].astype(str).apply(clean_code_string).replace("nan", "")
 
         # ── 5. Push ONLY the Code Column back to Google Sheets ───────────
         # Extract only the calculated Code values as a list of lists (column format)
@@ -884,8 +904,10 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
         # Single batch update targeted strictly at that range
         ho_ws.update(range_name=update_range, values=code_values_to_upload)
         
+        show_popup("Successfully updated", type = "success")
         return True
         
     except Exception as e:
         print(f"Backend processing error: {e}")
+        show_popup(f"Backend processing error: {e}", type= "error")
         return False
