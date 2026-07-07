@@ -130,7 +130,7 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
     today_str = datetime.now(IST).strftime("%Y-%m-%d")
     cust_col  = f"remark_cust_{today_str}"
     asp_col   = f"remark_asp_{today_str}"
-    int_col   = f"remark_internalTeam_{today_str}"
+    int_col   = f"remark_internalteam_{today_str}"
     
     ck = f"cache_df_{sheet_name}"
     existing_cust = ""
@@ -519,7 +519,7 @@ def render_dashboard(
         )
 
     # Scans for existing headers dynamically matching all three patterns
-    all_remark_cols = [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp") or c.startswith("remark_internalTeam")]
+    all_remark_cols = [c for c in master_df.columns if c.startswith("remark_cust") or c.startswith("remark_asp") or c.startswith("remark_internalteam")]
     
     start, end = render_pagination(sheet_name, len(df_filtered), position="top")
     df_page = df_filtered.iloc[start:end].copy()
@@ -549,14 +549,14 @@ def render_dashboard(
     }
 
     for col in all_remark_cols:
-        clean_lbl = col.replace("remark_cust", "Cust Remark ").replace("remark_asp", "ASP Remark ").replace("remark_internalTeam", "Internal Team Remark ")
+        clean_lbl = col.replace("remark_cust", "Cust Remark ").replace("remark_asp", "ASP Remark ").replace("remark_internalteam", "Internal Team Remark ")
         column_config[col] = st.column_config.TextColumn(clean_lbl, width="Medium")
 
     popup_state_suffix = "active" if pending_key in st.session_state else "cleared"
 
     table_selection_mode = "single-row" if allow_remark else "disabled"
     table_on_select      = "rerun" if allow_remark else "ignore"
-    
+
     event = st.dataframe(
         df_page[columns_order],
         column_config=column_config,
@@ -586,4 +586,3 @@ def render_dashboard(
             st.rerun()
 
     st.caption("Remarks are separated by category and cataloged daily by date structural headers.")
-
