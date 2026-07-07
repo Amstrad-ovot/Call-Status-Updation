@@ -724,7 +724,7 @@ def checking_call_age_ch_data():
         print("CH Raw Data ageing columns refreshed.")
 
         # ── Filter rows to move (age == 16) ──
-        age_16_data = df_ch[df_ch["age_at_todays"] == 16].copy()
+        age_16_data = df_ch[df_ch["age_at_todays"] >= 16].copy()
         print("Rows moving CH → HO Raw Data:", age_16_data.shape)
 
         if age_16_data.empty:
