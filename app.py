@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-
 from src.sidebar import render_sidebar
 from login import render_login_page
 from circlehead import render_dashboard
