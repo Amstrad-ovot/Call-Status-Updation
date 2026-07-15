@@ -120,7 +120,8 @@ elif page == "ho_dashboard":
         sheet_name    = "HO Raw Data",
         title         = "📌 HO Dashboard",
         allow_remark  = True,
-        region_filter = None,       # HO sees all rows
+        # region_filter = None,       # HO sees all rows
+        region_filter = get_ch_regions(),       # HO sees all rows
     )
 
 # ── CH Dashboard (both roles can view) ────────────────────
