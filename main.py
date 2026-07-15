@@ -73,6 +73,12 @@ def func1(raw_file):
 
         data = pd.read_excel(raw_file)
         data.columns = data.columns.str.lower().str.replace(" ", "_").str.replace(".", "_").str.strip()
+
+        # Define the list of status codes you want to exclude
+        excluded_statuses = ["TO_BE_REJECTED", "RAN_C_CN_DUE", "RAN_D_CN_DUE"]
+
+        # Filter the dataframe to keep only rows NOT in that list
+        data = data[~data["status_code"].str.upper().str.strip().isin(excluded_statuses)]
         
         selected_columns = [
             "register_id", "job_id", "service_id", "customer_name",  "phone1","customer_type", "address1", "city", "state", "customer_pincode", "producttype_code", "model_code", "product_srno", "product_srno2", "company_name","provider_phone1", "circle", "customer_type", "call_date", "status_updated_date", "status_code",  "registration_date", "warrantytype", "invoice_no", "invoice_date"
