@@ -5,6 +5,7 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 from gspread.utils import rowcol_to_a1
+import numpy as np
 
 # ──────────────────────────────────────────────
 # Connection & UI Layer
@@ -73,13 +74,13 @@ def func1(raw_file):
 
         data = pd.read_excel(raw_file)
         data.columns = data.columns.str.lower().str.replace(" ", "_").str.replace(".", "_").str.strip()
-
+        
         # Define the list of status codes you want to exclude
         excluded_statuses = ["TO_BE_REJECTED", "RAN_C_CN_DUE", "RAN_D_CN_DUE"]
 
         # Filter the dataframe to keep only rows NOT in that list
         data = data[~data["status_code"].str.upper().str.strip().isin(excluded_statuses)]
-        
+
         selected_columns = [
             "register_id", "job_id", "service_id", "customer_name",  "phone1","customer_type", "address1", "city", "state", "customer_pincode", "producttype_code", "model_code", "product_srno", "product_srno2", "company_name","provider_phone1", "circle", "customer_type", "call_date", "status_updated_date", "status_code",  "registration_date", "warrantytype", "invoice_no", "invoice_date"
         ]
@@ -106,9 +107,9 @@ def func1(raw_file):
         merged_data["age_reg_days"] = merged_data["age_from_call_reg"].dt.days.fillna(0).astype(int)
         
         # Correct: create boolean flag columns, cast True/False to 0/1
-        merged_data["7+_calls"]  = ((merged_data["age_reg_days"] > 7)  & (merged_data["age_reg_days"] <= 15)).astype(int)
+        merged_data["7+_calls"]  = ((merged_data["age_reg_days"] > 7)  & (merged_data["age_reg_days"] <= 14)).astype(int)
 
-        merged_data["15+_calls"] = (merged_data["age_reg_days"] > 15).astype(int)
+        merged_data["15+_calls"] = (merged_data["age_reg_days"] > 14).astype(int)
         
         if not merged_data.empty:
             data_to_write = [merged_data.columns.tolist()] + merged_data.fillna("").astype(str).values.tolist()
@@ -128,170 +129,6 @@ def func1(raw_file):
 # Vectorized Sync Engines
 # ──────────────────────────────────────────────
 
-# def update_ch_raw_data():
-#     try:
-#         print("Inside update ch raw data function...")
-#         spreadsheet = connect_gsheet()
-
-#         detail_ws   = spreadsheet.worksheet("Detailed_Data")
-#         detail_data = detail_ws.get_all_values()
-#         if len(detail_data) <= 1:
-#             show_popup("Detailed_Data sheet is empty!", type="info")
-#             return
-
-#         df_detail = pd.DataFrame(detail_data[1:], columns=detail_data[0])
-#         df_detail.columns = df_detail.columns.str.lower().str.strip().str.replace(" ", "_")
-#         df_detail = df_detail.loc[:, ~df_detail.columns.duplicated()]
-#         df_detail["service_id"] = df_detail["service_id"].astype(str).str.strip()
-
-#         df_filtered = df_detail[df_detail["7+_calls"].astype(str) == "1"].copy()
-#         print("*****The dimension of filtered CH dataframe is:", df_filtered.shape)
-#         df_filtered = df_filtered.reset_index(drop=True)
-
-#         if df_filtered.empty:
-#             show_popup("No 7+ calls data found!", type="info")
-#             # return
-
-#         all_detail_ids    = set(df_detail["service_id"])
-#         ageing_sheet_name = "CH Raw Data"
-
-#         try:
-#             ageing_ws   = spreadsheet.worksheet(ageing_sheet_name)
-#             ageing_data = ageing_ws.get_all_values()
-
-#             if ageing_data and len(ageing_data) > 1:
-#                 df_ageing_existing = pd.DataFrame(ageing_data[1:], columns=ageing_data[0])
-#                 df_ageing_existing.columns = df_ageing_existing.columns.str.lower().str.strip().str.replace(" ", "_")
-#                 df_ageing_existing = df_ageing_existing.loc[:, ~df_ageing_existing.columns.duplicated()].reset_index(drop=True)
-#                 df_ageing_existing["service_id"] = df_ageing_existing["service_id"].astype(str).str.strip()
-#             else:
-#                 df_ageing_existing = pd.DataFrame()
-#         except gspread.WorksheetNotFound:
-#             ageing_ws = spreadsheet.add_worksheet(ageing_sheet_name, rows=5000, cols=30)
-#             df_ageing_existing = pd.DataFrame()
-
-#         if df_ageing_existing.empty:
-#             data_to_write = [df_filtered.columns.tolist()] + df_filtered.fillna("").astype(str).values.tolist()
-#             ageing_ws.update(data_to_write)
-#             show_popup(f"CH Raw Data sheet created with {len(df_filtered)} records!", type="success")
-#             return
-
-#         # ── Move rows no longer in Detailed_Data → cc_ch_data ──
-#         existing_ageing_ids = set(df_ageing_existing["service_id"])
-#         moved_ids           = existing_ageing_ids - all_detail_ids
-#         df_moved            = df_ageing_existing[df_ageing_existing["service_id"].isin(moved_ids)].copy()
-#         print("Rows to move → cc_ch_data:", df_moved.shape)
-
-#         df_ageing_existing = df_ageing_existing[
-#             ~df_ageing_existing["service_id"].isin(moved_ids)
-#         ].reset_index(drop=True).copy()
-
-#         if not df_moved.empty:
-#             cc_sheet_name = "cc_ch_data"
-#             try:
-#                 cc_ws   = spreadsheet.worksheet(cc_sheet_name)
-#                 cc_data = cc_ws.get_all_values()
-#                 if cc_data and len(cc_data) > 1:
-#                     df_cc_existing = pd.DataFrame(cc_data[1:], columns=cc_data[0])
-#                     df_cc_existing.columns = df_cc_existing.columns.str.lower().str.strip().str.replace(" ", "_")
-#                     df_cc_existing = df_cc_existing.loc[:, ~df_cc_existing.columns.duplicated()].reset_index(drop=True)
-#                     df_cc_existing["service_id"] = df_cc_existing["service_id"].astype(str).str.strip()
-#                 else:
-#                     df_cc_existing = pd.DataFrame()
-#             except gspread.WorksheetNotFound:
-#                 cc_ws = spreadsheet.add_worksheet(cc_sheet_name, rows=5000, cols=30)
-#                 df_cc_existing = pd.DataFrame()
-
-#             # FIX: old code used `if not df_cc_existing.empty else []` as the boolean
-#             # mask — when empty, [] selects nothing and df_moved_new is always empty,
-#             # so nothing was ever written to cc_ch_data.
-#             if df_cc_existing.empty:
-#                 # No existing cc data → write all moved rows directly
-#                 cc_data_to_write = (
-#                     [df_moved.columns.tolist()]
-#                     + df_moved.fillna("").astype(str).values.tolist()
-#                 )
-#                 cc_ws.update(cc_data_to_write)
-#                 print(f"cc_ch_data created with {len(df_moved)} rows.")
-#             else:
-#                 # Append only rows not already present in cc_ch_data
-#                 existing_cc_ids = set(df_cc_existing["service_id"])
-#                 df_moved_new    = df_moved[~df_moved["service_id"].isin(existing_cc_ids)].copy()
-
-#                 if not df_moved_new.empty:
-#                     df_moved_new   = df_moved_new.reindex(columns=df_cc_existing.columns, fill_value="")
-#                     df_cc_existing = pd.concat([df_cc_existing, df_moved_new], ignore_index=True)
-#                     cc_final_data  = (
-#                         [df_cc_existing.columns.tolist()]
-#                         + df_cc_existing.fillna("").astype(str).values.tolist()
-#                     )
-#                     cc_ws.clear()
-#                     cc_ws.update(cc_final_data)
-#                     print(f"cc_ch_data appended with {len(df_moved_new)} new rows.")
-#                 else:
-#                     print("All moved rows already exist in cc_ch_data — nothing appended.")
-
-#         # ── Vectorized Update Engine (merge-based, avoids index mismatch) ──
-#         ageing_cols  = df_ageing_existing.columns.tolist()
-#         remarks_cols = {col for col in ageing_cols if col.startswith("remark")}
-
-#         # Build update cols from df_filtered (source of truth), not df_ageing_existing
-#         cols_to_update = [
-#             col for col in df_filtered.columns
-#             if col != "service_id"
-#             and col not in remarks_cols
-#             and col in df_ageing_existing.columns
-#         ]
-#         print(f"Columns being updated: {cols_to_update}")
-
-#         matched_ids   = set(df_ageing_existing["service_id"]) & set(df_filtered["service_id"])
-#         updated_count = len(matched_ids)
-#         df_ageing_new = df_filtered[~df_filtered["service_id"].isin(matched_ids)].reset_index(drop=True).copy()
-
-#         # Merge-based update — immune to integer index mismatches
-#         df_updates = (
-#             df_filtered[df_filtered["service_id"].isin(matched_ids)][["service_id"] + cols_to_update]
-#             .drop_duplicates(subset="service_id")
-#             .reset_index(drop=True)
-#         )
-
-#         df_ageing_existing = df_ageing_existing.merge(
-#             df_updates,
-#             on="service_id",
-#             how="left",
-#             suffixes=("", "_new")
-#         )
-
-#         for col in cols_to_update:
-#             new_col = col + "_new"
-#             if new_col in df_ageing_existing.columns:
-#                 mask = df_ageing_existing[new_col].notna() & (df_ageing_existing[new_col] != "")
-#                 df_ageing_existing.loc[mask, col] = df_ageing_existing.loc[mask, new_col]
-#                 df_ageing_existing.drop(columns=[new_col], inplace=True)
-
-#         # Append brand-new rows
-#         if not df_ageing_new.empty:
-#             df_ageing_new      = df_ageing_new.reindex(columns=ageing_cols, fill_value="")
-#             df_ageing_existing = pd.concat([df_ageing_existing, df_ageing_new], ignore_index=True)
-
-#         # Single bulk write
-#         final_data = [df_ageing_existing.columns.tolist()] + df_ageing_existing.fillna("").astype(str).values.tolist()
-#         ageing_ws.clear()
-#         ageing_ws.update(final_data)
-
-#         show_popup(
-#             f"CH Raw Data updated! {updated_count} rows updated, "
-#             f"{len(df_ageing_new)} new rows added, {len(df_moved)} rows moved to cc_ch_data.",
-#             type="success"
-#         )
-
-#     except Exception as e:
-#         print(f"Error in update_ch_raw_data: {e}")
-#         show_popup(f"Error While Updating CH Raw Data: {e}", type="error")
-
-# # ALso do same changes in this function service_id which are not present in detiled data sheet this service id data should be moved from CH_Raw_data sheet to cc_ch_data sheet with its all data with remarks columns
-
-# Working...
 def update_ch_raw_data():
     try:
         print("Inside update ch raw data function...")
@@ -452,6 +289,7 @@ def update_ch_raw_data():
         print(f"Error in update_ch_raw_data: {e}")
         show_popup(f"Error While Updating CH Raw Data: {e}", type="error")
 
+
 # def update_ho_raw_data():
 #     try:
 #         spreadsheet = connect_gsheet()
@@ -468,7 +306,7 @@ def update_ch_raw_data():
 
 #         df_filtered = df_detail[df_detail["15+_calls"].astype(str) == "1"].copy()
 #         df_filtered  = df_filtered.reset_index(drop=True)
-
+        
 #         if df_filtered.empty:
 #             show_popup("No 15+ calls data found!", type="info")
 #             return
@@ -477,6 +315,7 @@ def update_ch_raw_data():
 #         ho_sheet_name  = "HO Raw Data"
 
 #         try:
+#             # To fetch the HO Data
 #             ho_ws   = spreadsheet.worksheet(ho_sheet_name)
 #             ho_data = ho_ws.get_all_values()
 
@@ -500,8 +339,11 @@ def update_ch_raw_data():
 #         # ── Move rows no longer in Detailed_Data → cc_ho_data ──
 #         existing_ho_ids = set(df_ho_existing["service_id"])
 #         moved_ids       = existing_ho_ids - all_detail_ids
+        
+#         # This keeps the remarks intact from the main sheet data state
 #         df_moved        = df_ho_existing[df_ho_existing["service_id"].isin(moved_ids)].copy()
 
+#         # This cleanly drops the rows (including their remarks) from the live HO sheet state
 #         df_ho_existing  = df_ho_existing[
 #             ~df_ho_existing["service_id"].isin(moved_ids)
 #         ].reset_index(drop=True).copy()
@@ -524,11 +366,7 @@ def update_ch_raw_data():
 #                 cc_ws = spreadsheet.add_worksheet(cc_sheet_name, rows=5000, cols=30)
 #                 df_cc_existing = pd.DataFrame()
 
-#             # FIX: when df_cc_existing is empty, the old code passed `[]` as the
-#             # boolean mask which silently selected nothing — df_moved_new was always
-#             # empty and nothing was ever written to cc_ho_data.
 #             if df_cc_existing.empty:
-#                 # No existing cc data → write all moved rows directly
 #                 cc_data_to_write = (
 #                     [df_moved.columns.tolist()]
 #                     + df_moved.fillna("").astype(str).values.tolist()
@@ -536,20 +374,23 @@ def update_ch_raw_data():
 #                 cc_ws.update(cc_data_to_write)
 #                 print(f"cc_ho_data created with {len(df_moved)} rows.")
 #             else:
-#                 # Append only rows not already in cc_ho_data
+#                 # Only extract records not already present in archive
 #                 existing_cc_ids = set(df_cc_existing["service_id"])
 #                 df_moved_new    = df_moved[~df_moved["service_id"].isin(existing_cc_ids)].copy()
 
 #                 if not df_moved_new.empty:
-#                     df_moved_new   = df_moved_new.reindex(columns=df_cc_existing.columns, fill_value="")
+#                     # FIX: Use dynamic concatenation instead of destructive .reindex()
+#                     # This allows columns unique to df_moved (like remarks) to merge into the output schema safely
 #                     df_cc_existing = pd.concat([df_cc_existing, df_moved_new], ignore_index=True)
+#                     df_cc_existing.fillna("", inplace=True)
+                    
 #                     cc_final_data  = (
 #                         [df_cc_existing.columns.tolist()]
-#                         + df_cc_existing.fillna("").astype(str).values.tolist()
+#                         + df_cc_existing.astype(str).values.tolist()
 #                     )
 #                     cc_ws.clear()
 #                     cc_ws.update(cc_final_data)
-#                     print(f"cc_ho_data appended with {len(df_moved_new)} new rows.")
+#                     print(f"cc_ho_data appended with {len(df_moved_new)} new rows (including remarks).")
 #                 else:
 #                     print("All moved rows already exist in cc_ho_data — nothing appended.")
 
@@ -557,7 +398,6 @@ def update_ch_raw_data():
 #         ho_cols      = df_ho_existing.columns.tolist()
 #         remarks_cols = {col for col in ho_cols if col.startswith("remark")}
 
-#         # Build update cols from df_filtered (source of truth), not df_ho_existing
 #         cols_to_update = [
 #             col for col in df_filtered.columns
 #             if col != "service_id"
@@ -570,7 +410,6 @@ def update_ch_raw_data():
 #         updated_count = len(matched_ids)
 #         df_ho_new     = df_filtered[~df_filtered["service_id"].isin(matched_ids)].reset_index(drop=True).copy()
 
-#         # Merge-based update — immune to integer index mismatches
 #         df_updates = (
 #             df_filtered[df_filtered["service_id"].isin(matched_ids)][["service_id"] + cols_to_update]
 #             .drop_duplicates(subset="service_id")
@@ -591,12 +430,10 @@ def update_ch_raw_data():
 #                 df_ho_existing.loc[mask, col] = df_ho_existing.loc[mask, new_col]
 #                 df_ho_existing.drop(columns=[new_col], inplace=True)
 
-#         # Append brand-new rows
 #         if not df_ho_new.empty:
 #             df_ho_new  = df_ho_new.reindex(columns=ho_cols, fill_value="")
 #             df_ho_existing = pd.concat([df_ho_existing, df_ho_new], ignore_index=True)
 
-#         # Single bulk write
 #         final_data = [df_ho_existing.columns.tolist()] + df_ho_existing.fillna("").astype(str).values.tolist()
 #         ho_ws.clear()
 #         ho_ws.update(final_data)
@@ -612,7 +449,7 @@ def update_ch_raw_data():
 #         show_popup(f"Error While Updating HO Data: {e}", type="error")
 
 
-# Working...
+
 def update_ho_raw_data():
     try:
         spreadsheet = connect_gsheet()
@@ -627,18 +464,37 @@ def update_ho_raw_data():
         df_detail = df_detail.loc[:, ~df_detail.columns.duplicated()]
         df_detail["service_id"] = df_detail["service_id"].astype(str).str.strip()
 
-        df_filtered = df_detail[df_detail["15+_calls"].astype(str) == "1"].copy()
-        df_filtered  = df_filtered.reset_index(drop=True)
+        # ── NEW: Calculate and Insert Call Category Column ──
+        if "age_reg_days" in df_detail.columns:
+            # Safely convert to numeric for accurate condition checking
+            age_numeric = pd.to_numeric(df_detail["age_reg_days"], errors="coerce")
+            
+            # Apply your logic: > 15 -> red call, == 15 -> encroaching
+            df_detail["call_category"] = np.select(
+                [age_numeric > 15, age_numeric == 15],
+                ["red call", "encroaching"],
+                default=""
+            )
+            
+            # Reposition 'call_category' immediately after 'age_reg_days'
+            idx = df_detail.columns.get_loc("age_reg_days") + 1
+            cols = df_detail.columns.tolist()
+            cols.insert(idx, cols.pop(cols.index("call_category")))
+            df_detail = df_detail[cols]
 
+        df_filtered = df_detail[df_detail["15+_calls"].astype(str) == "1"].copy()
+        df_filtered = df_filtered.reset_index(drop=True)
+        
         if df_filtered.empty:
             show_popup("No 15+ calls data found!", type="info")
             return
 
         all_detail_ids = set(df_detail["service_id"])
-        ho_sheet_name  = "HO Raw Data"
+        ho_sheet_name = "HO Raw Data"
 
         try:
-            ho_ws   = spreadsheet.worksheet(ho_sheet_name)
+            # To fetch the HO Data
+            ho_ws = spreadsheet.worksheet(ho_sheet_name)
             ho_data = ho_ws.get_all_values()
 
             if ho_data and len(ho_data) > 1:
@@ -646,6 +502,11 @@ def update_ho_raw_data():
                 df_ho_existing.columns = df_ho_existing.columns.str.lower().str.strip().str.replace(" ", "_")
                 df_ho_existing = df_ho_existing.loc[:, ~df_ho_existing.columns.duplicated()].reset_index(drop=True)
                 df_ho_existing["service_id"] = df_ho_existing["service_id"].astype(str).str.strip()
+                
+                # Ensure existing sheet gets the schema update if it's missing the column
+                if "call_category" not in df_ho_existing.columns and "age_reg_days" in df_ho_existing.columns:
+                    idx = df_ho_existing.columns.get_loc("age_reg_days") + 1
+                    df_ho_existing.insert(idx, "call_category", "")
             else:
                 df_ho_existing = pd.DataFrame()
         except gspread.WorksheetNotFound:
@@ -660,13 +521,13 @@ def update_ho_raw_data():
 
         # ── Move rows no longer in Detailed_Data → cc_ho_data ──
         existing_ho_ids = set(df_ho_existing["service_id"])
-        moved_ids       = existing_ho_ids - all_detail_ids
+        moved_ids = existing_ho_ids - all_detail_ids
         
         # This keeps the remarks intact from the main sheet data state
-        df_moved        = df_ho_existing[df_ho_existing["service_id"].isin(moved_ids)].copy()
+        df_moved = df_ho_existing[df_ho_existing["service_id"].isin(moved_ids)].copy()
 
         # This cleanly drops the rows (including their remarks) from the live HO sheet state
-        df_ho_existing  = df_ho_existing[
+        df_ho_existing = df_ho_existing[
             ~df_ho_existing["service_id"].isin(moved_ids)
         ].reset_index(drop=True).copy()
 
@@ -675,13 +536,18 @@ def update_ho_raw_data():
         if not df_moved.empty:
             cc_sheet_name = "cc_ho_data"
             try:
-                cc_ws   = spreadsheet.worksheet(cc_sheet_name)
+                cc_ws = spreadsheet.worksheet(cc_sheet_name)
                 cc_data = cc_ws.get_all_values()
                 if cc_data and len(cc_data) > 1:
                     df_cc_existing = pd.DataFrame(cc_data[1:], columns=cc_data[0])
                     df_cc_existing.columns = df_cc_existing.columns.str.lower().str.strip().str.replace(" ", "_")
                     df_cc_existing = df_cc_existing.loc[:, ~df_cc_existing.columns.duplicated()].reset_index(drop=True)
                     df_cc_existing["service_id"] = df_cc_existing["service_id"].astype(str).str.strip()
+                    
+                    # Ensure existing archive sheet gets the schema update if it's missing the column
+                    if "call_category" not in df_cc_existing.columns and "age_reg_days" in df_cc_existing.columns:
+                        idx = df_cc_existing.columns.get_loc("age_reg_days") + 1
+                        df_cc_existing.insert(idx, "call_category", "")
                 else:
                     df_cc_existing = pd.DataFrame()
             except gspread.WorksheetNotFound:
@@ -698,15 +564,13 @@ def update_ho_raw_data():
             else:
                 # Only extract records not already present in archive
                 existing_cc_ids = set(df_cc_existing["service_id"])
-                df_moved_new    = df_moved[~df_moved["service_id"].isin(existing_cc_ids)].copy()
+                df_moved_new = df_moved[~df_moved["service_id"].isin(existing_cc_ids)].copy()
 
                 if not df_moved_new.empty:
-                    # FIX: Use dynamic concatenation instead of destructive .reindex()
-                    # This allows columns unique to df_moved (like remarks) to merge into the output schema safely
                     df_cc_existing = pd.concat([df_cc_existing, df_moved_new], ignore_index=True)
                     df_cc_existing.fillna("", inplace=True)
                     
-                    cc_final_data  = (
+                    cc_final_data = (
                         [df_cc_existing.columns.tolist()]
                         + df_cc_existing.astype(str).values.tolist()
                     )
@@ -717,7 +581,7 @@ def update_ho_raw_data():
                     print("All moved rows already exist in cc_ho_data — nothing appended.")
 
         # ── Vectorized Update Engine (merge-based, avoids index mismatch) ──
-        ho_cols      = df_ho_existing.columns.tolist()
+        ho_cols = df_ho_existing.columns.tolist()
         remarks_cols = {col for col in ho_cols if col.startswith("remark")}
 
         cols_to_update = [
@@ -728,9 +592,9 @@ def update_ho_raw_data():
         ]
         print(f"Columns being updated: {cols_to_update}")
 
-        matched_ids   = set(df_ho_existing["service_id"]) & set(df_filtered["service_id"])
+        matched_ids = set(df_ho_existing["service_id"]) & set(df_filtered["service_id"])
         updated_count = len(matched_ids)
-        df_ho_new     = df_filtered[~df_filtered["service_id"].isin(matched_ids)].reset_index(drop=True).copy()
+        df_ho_new = df_filtered[~df_filtered["service_id"].isin(matched_ids)].reset_index(drop=True).copy()
 
         df_updates = (
             df_filtered[df_filtered["service_id"].isin(matched_ids)][["service_id"] + cols_to_update]
@@ -753,7 +617,7 @@ def update_ho_raw_data():
                 df_ho_existing.drop(columns=[new_col], inplace=True)
 
         if not df_ho_new.empty:
-            df_ho_new  = df_ho_new.reindex(columns=ho_cols, fill_value="")
+            df_ho_new = df_ho_new.reindex(columns=ho_cols, fill_value="")
             df_ho_existing = pd.concat([df_ho_existing, df_ho_new], ignore_index=True)
 
         final_data = [df_ho_existing.columns.tolist()] + df_ho_existing.fillna("").astype(str).values.tolist()
@@ -820,7 +684,7 @@ def checking_call_age_ch_data():
 
         # ── Filter rows to move (age == 16) ──
         # age_16_data = df_ch[df_ch["age_at_todays"] == 16].copy()
-        age_16_data = df_ch[df_ch["age_at_todays"] >= 16].copy()
+        age_16_data = df_ch[df_ch["age_at_todays"] >= 15].copy()
         print("Rows moving CH → HO Raw Data:", age_16_data.shape)
 
         if age_16_data.empty:
