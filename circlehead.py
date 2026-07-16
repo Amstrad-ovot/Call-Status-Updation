@@ -22,6 +22,7 @@ HEADER_LABELS = {
     "age_from_call_reg": "Call Age",
     "status_code" :      "Status Code",
     "status_updated_date" : "Status Updated Date",
+    "call_category":     "Call Category", # Label config for the new column
 }
 
 IST = pytz.timezone('Asia/Kolkata')
@@ -137,6 +138,9 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
     existing_asp  = ""
     existing_int  = ""
     
+    # ── NEW: Check if this is a CH sheet to conditionally disable Internal Team Remarks ──
+    is_ch_sheet = "ch" in sheet_name.lower()
+    
     if ck in st.session_state and cache_row_idx is not None:
         master_df = st.session_state[ck]
         if cust_col in master_df.columns:
@@ -145,7 +149,7 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
         if asp_col in master_df.columns:
             val_a = master_df.at[cache_row_idx, asp_col]
             existing_asp = "" if pd.isna(val_a) or str(val_a).strip() in ("", "nan") else str(val_a).strip()
-        if int_col in master_df.columns:
+        if not is_ch_sheet and int_col in master_df.columns:
             val_i = master_df.at[cache_row_idx, int_col]
             existing_int = "" if pd.isna(val_i) or str(val_i).strip() in ("", "nan") else str(val_i).strip()
 
@@ -166,25 +170,27 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
     new_asp = st.text_area("ASP Remark Input", placeholder="Type ASP remark here...", 
                            height=100, label_visibility="collapsed", key="dialog_asp_input")
 
-    st.divider()
+    # ── NEW: Render Internal Team Remark only if NOT a CH sheet ──
+    new_int = ""
+    if not is_ch_sheet:
+        st.divider()
+        st.markdown("**👥 Internal Team Remark History**")
+        if existing_int:
+            st.info(existing_int)
+        new_int = st.text_area("Internal Team Remark Input", placeholder="Type internal team remark here...", 
+                               height=100, label_visibility="collapsed", key="dialog_int_input")
 
-    st.markdown("**👥 Internal Team Remark History**")
-    if existing_int:
-        st.info(existing_int)
-    new_int = st.text_area("Internal Team Remark Input", placeholder="Type internal team remark here...", 
-                           height=100, label_visibility="collapsed", key="dialog_int_input")
-
-    if existing_cust or existing_asp or existing_int:
+    if existing_cust or existing_asp or (not is_ch_sheet and existing_int):
         overwrite = st.checkbox("Append entries to existing history tracker", value=True)
     else:
         overwrite = True
-
+     
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Save Remarks", use_container_width=True, type="primary"):
-            if not new_cust.strip() and not new_asp.strip() and not new_int.strip():
+            if not new_cust.strip() and not new_asp.strip() and (is_ch_sheet or not new_int.strip()):
                 st.warning("All remark entries cannot be empty.")
-            elif (existing_cust or existing_asp or existing_int) and not overwrite:
+            elif (existing_cust or existing_asp or (not is_ch_sheet and existing_int)) and not overwrite:
                 st.warning("Please toggle the append validation checkbox.")
             else:
                 uname = st.session_state.get("user_name", "UnknownUser")
@@ -204,7 +210,8 @@ def remark_dialog(ws, row_index, cache_row_idx, service_id,
                     _save_remark(ws=ws, row_index=row_index, remark_col=asp_col, col_idx=a_idx,
                                  remark_text=final_asp, sheet_name=sheet_name, headers=headers, cache_row_idx=cache_row_idx)
 
-                if new_int.strip():
+                # Save internal team remark only if it's allowed on this sheet
+                if not is_ch_sheet and new_int.strip():
                     payload_int = f"{uname}_{timestamp} -- {new_int.strip()}"
                     final_int = f"{existing_int}\n{payload_int}" if (existing_int and overwrite) else payload_int
                     i_idx = headers.index(int_col) + 1 if int_col in headers else None
@@ -440,7 +447,7 @@ def render_dashboard(
     if "7+_calls" in df_view.columns:
         m2.metric("7+ Day Calls", int(df_view["7+_calls"].astype(str).eq("1").sum()))
     if "15+_calls" in df_view.columns:
-        m3.metric("15+ Day Calls", int(df_view["15+_calls"].astype(str).eq("1").sum()))
+        m3.metric("14+ Day Calls", int(df_view["15+_calls"].astype(str).eq("1").sum()))
 
     st.divider()
 
@@ -532,7 +539,23 @@ def render_dashboard(
     )
 
     # ── Native Table Rendering Framework ──────────────────
-    columns_order = FIXED_COLS + all_remark_cols
+    # Create the mutable column list order
+    columns_order = list(FIXED_COLS)
+    
+    # ── NEW: Handle Category Column Display (Only in HO Raw Data) ──
+    is_ho_sheet = sheet_name.lower() == "ho raw data"
+    if is_ho_sheet and "call_category" in df_page.columns:
+        # Fill missing categories cleanly
+        df_page["call_category"] = df_page["call_category"].fillna("-").replace("nan", "-")
+        # Position 'call_category' immediately after 'age_from_call_reg' (Call Age)
+        if "age_from_call_reg" in columns_order:
+            idx = columns_order.index("age_from_call_reg") + 1
+            columns_order.insert(idx, "call_category")
+        else:
+            columns_order.append("call_category")
+
+    # Append remarks
+    columns_order.extend(all_remark_cols)
 
     for col in all_remark_cols:
         if col in df_page.columns:
@@ -546,6 +569,7 @@ def render_dashboard(
         "age_from_call_reg": st.column_config.TextColumn("Call Age", width="None"),
         "status_code": st.column_config.TextColumn("Status Code", width="None"),
         "status_updated_date": st.column_config.TextColumn("Status Updated Date", width="None"),
+        "call_category": st.column_config.TextColumn("Call Category", width="None"), # Config for Category Column
     }
 
     for col in all_remark_cols:
