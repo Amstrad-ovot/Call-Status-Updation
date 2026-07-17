@@ -40,7 +40,6 @@ def access_denied():
     st.warning("⚠️ You don't have permission to access this page.")
     st.stop()
 
-
 def get_ch_regions() -> list[str] | None:
     if is_ho:
         return None                     # HO sees all rows
