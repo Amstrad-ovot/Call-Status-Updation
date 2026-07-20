@@ -1,15 +1,20 @@
 import streamlit as st
 import pandas as pd
+
 from src.sidebar import render_sidebar
 from login import render_login_page
 from circlehead import render_dashboard
+import pytz
+from datetime import datetime
+
 from main import (
     func1,
     update_ch_raw_data,
     update_ho_raw_data,
     checking_call_age_ch_data,
-    update_call_assignment_in_ho
-)
+    update_call_assignment_in_ho,
+    calls_data,
+convert_df_to_formatted_excel)
 
 st.set_page_config(page_title="Service Call Status App", layout="wide")
 
@@ -35,10 +40,10 @@ def user_info_caption():
         parts.append(f"Regions: {st.session_state['user_regions']}")
     st.caption("  |  ".join(parts))
 
-
 def access_denied():
     st.warning("⚠️ You don't have permission to access this page.")
     st.stop()
+
 
 def get_ch_regions() -> list[str] | None:
     if is_ho:
@@ -47,6 +52,36 @@ def get_ch_regions() -> list[str] | None:
     if not raw:
         return []                       # CH with nothing assigned → sees nothing
     return [r.strip() for r in str(raw).split(",") if r.strip()]
+
+
+# ── 4. Pages ──────────────────────────────────────────────
+
+# ── Upload (HO only) ──────────────────────────────────────
+# if page == "upload":
+#     if is_ch:
+#         access_denied()
+
+#     st.header("📤 Upload File & Create Report")
+#     user_info_caption()
+
+#     uploaded_raw_file = st.file_uploader(
+#         "Choose the Raw Data Excel file", type=["xlsx"]
+#     )
+
+#     if uploaded_raw_file is not None:
+#         if st.button("Upload Data"):
+#             with st.spinner("Processing data and pushing to Database..."):
+#                 try:
+#                     checking_call_age_ch_data()
+#                     final_df = func1(uploaded_raw_file)
+#                     if isinstance(final_df, pd.DataFrame):
+#                         update_ch_raw_data()
+#                         update_ho_raw_data()
+#                         st.success("✅ Data updated in Database!")
+#                 except Exception as e:
+#                     st.error(f"Error during processing: {e}")
+
+#     st.divider()
 
 # ── 4. Pages ──────────────────────────────────────────────
 
@@ -108,6 +143,33 @@ if page == "upload":
 
     st.divider()
 
+    # --- Streamlit UI Block ---
+    st.header("📥 Download Summary Report")
+
+    if st.button("Generate Summary Report"):
+        with st.spinner("Fetching data and creating beautifully formatted report..."):
+            df = calls_data()
+        
+            if df is not None:
+                # Convert to formatted Excel bytes
+                excel_data = convert_df_to_formatted_excel(df)
+            
+                # Setup timezone and filenames
+                IST = pytz.timezone('Asia/Kolkata')
+                file_timestamp = datetime.now(IST).strftime('%Y%m%d_%H%M')
+            
+                # Display download link
+                st.success("Report generated successfully!")
+                st.download_button(
+                    label="⬇️ Click here to Download Excel",
+                    data=excel_data,
+                    file_name=f"summary_report_{file_timestamp}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.error("Could not retrieve data. Please check your connection or Google Sheet.")
+
+
 # ── HO Dashboard (HO only) ────────────────────────────────
 elif page == "ho_dashboard":
     if is_ch:
@@ -126,7 +188,7 @@ elif page == "ho_dashboard":
 #
 #   CH  → allow_remark=True,  region_filter = their assigned circles
 #   HO  → allow_remark=False, region_filter = None (sees all rows, read-only)
-#
+
 elif page == "ch_dashboard":
     # To fetch the user information
     user_info_caption()
