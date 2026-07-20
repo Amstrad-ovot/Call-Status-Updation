@@ -6,6 +6,10 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread.utils import rowcol_to_a1
 import numpy as np
+import io
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
 
 # ──────────────────────────────────────────────
 # Connection & UI Layer
@@ -455,6 +459,7 @@ def update_ho_raw_data():
         spreadsheet = connect_gsheet()
         detail_ws = spreadsheet.worksheet("Detailed_Data")
         detail_data = detail_ws.get_all_values()
+        
         if len(detail_data) <= 1:
             show_popup("Detailed_Data sheet is empty!", type="info")
             return
@@ -872,3 +877,117 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
         print(f"Backend processing error: {e}")
         show_popup(f"Backend processing error: {e}", type= "error")
         return False
+
+
+
+# To create summmary report
+def calls_data():
+    try:
+        spreadsheet = connect_gsheet()
+        detail_ws = spreadsheet.worksheet("Detailed_Data")
+        detail_data = detail_ws.get_all_values()
+        if len(detail_data) <= 1:
+            show_popup("Detailed_Data sheet is empty!", type="info")
+            return None
+
+        df_detail = pd.DataFrame(detail_data[1:], columns=detail_data[0])
+        df_detail.columns = df_detail.columns.str.lower().str.strip().str.replace(" ", "_")
+        df_detail = df_detail.loc[:, ~df_detail.columns.duplicated()]
+        
+        # 1. Convert call columns to numeric safely
+        df_detail['7+_calls'] = pd.to_numeric(df_detail['7+_calls'], errors='coerce').fillna(0)
+        df_detail['15+_calls'] = pd.to_numeric(df_detail['15+_calls'], errors='coerce').fillna(0)
+        df_detail["circle"] = df_detail["circle"].str.strip().str.lower()
+        df_detail["status_code"] = df_detail["status_code"].str.strip().str.upper()
+
+        # 2. Groupby 'circle' and 'status_code' and aggregate
+        df_summary = df_detail.groupby(['circle', 'status_code']).agg(
+            total_7plus_count=('7+_calls', lambda x: (x > 0).sum()),
+            total_14plus_count=('15+_calls', lambda x: (x > 0).sum())
+        ).reset_index()
+
+        # 3. Add the Combined Total Column
+        df_summary['grand_total_calls'] = df_summary['total_7plus_count'] + df_summary['total_14plus_count']
+        df_summary["circle"] = df_summary["circle"].str.title()
+
+        # ---- ADDING THE TOTAL ROW AT THE BOTTOM ----
+        if not df_summary.empty:
+            # Create a dictionary representing the total row layout
+            total_row = pd.DataFrame([{
+                'circle': 'Total',
+                'status_code': '',  # Kept blank for aesthetic neatness
+                'total_7plus_count': df_summary['total_7plus_count'].sum(),
+                'total_14plus_count': df_summary['total_14plus_count'].sum(),
+                'grand_total_calls': df_summary['grand_total_calls'].sum()
+            }])
+            
+            # Combine the summary dataframe with the new total row safely
+            df_summary = pd.concat([df_summary, total_row], ignore_index=True)
+
+        return df_summary
+
+    except Exception as e:
+        print(f"Error in calls data function is: {e}")
+        show_popup(f"Error in calls data function is: {e}")
+        return None
+
+
+# --- Excel Formatting Helper Function ---
+def convert_df_to_formatted_excel(df):
+    output = io.BytesIO()
+    
+    # Write DataFrame to excel
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Summary_Report')
+        
+        # Grab the worksheet to apply styling
+        workbook = writer.book
+        worksheet = writer.sheets['Summary_Report']
+        
+        # Define some clean, professional styles
+        header_font = Font(name='Segoe UI', size=11, bold=True, color='FFFFFF')
+        header_fill = PatternFill(start_color='1F4E78', end_color='1F4E78', fill_type='solid') # Deep steel blue
+        data_font = Font(name='Segoe UI', size=10)
+        
+        # Alignment & Borders
+        center_align = Alignment(horizontal='center', vertical='center')
+        left_align = Alignment(horizontal='left', vertical='center')
+        thin_border = Border(
+            left=Side(style='thin', color='D9D9D9'),
+            right=Side(style='thin', color='D9D9D9'),
+            top=Side(style='thin', color='D9D9D9'),
+            bottom=Side(style='thin', color='D9D9D9')
+        )
+        
+        # Format Headers
+        for col_num in range(1, worksheet.max_column + 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            # Make column names look clean (e.g. "total_7plus_count" -> "Total 7Plus Count")
+            cell.value = str(cell.value).replace('_', ' ').title()
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center_align
+            cell.border = thin_border
+            
+        # Format Data Rows & Columns
+        for row in range(2, worksheet.max_row + 1):
+            for col in range(1, worksheet.max_column + 1):
+                cell = worksheet.cell(row=row, column=col)
+                cell.font = data_font
+                cell.border = thin_border
+                
+                # Align numeric data to center, text/codes to left
+                if col in [1, 2]:  # Circle & Status Code
+                    cell.alignment = left_align
+                else:              # Counts
+                    cell.alignment = center_align
+                    cell.number_format = '#,##0'  # Clean integer formatting
+
+        # Auto-adjust column widths dynamically based on content length
+        for col in worksheet.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            worksheet.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    processed_data = output.getvalue()
+    return processed_data
