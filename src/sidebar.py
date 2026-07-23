@@ -90,8 +90,7 @@ def apply_sidebar_styles():
             border-color: #63b3ed !important;
         }
 
-        [data-testid="stSidebar"] hr {Unfiltered Nationwide Ledger
-                
+        [data-testid="stSidebar"] hr {
             border-color: rgba(255,255,255,0.1);
             margin: 12px 0;
         }
@@ -120,7 +119,8 @@ def render_sidebar():
         role_label = role.upper() if role else "USER"
         st.markdown(
             f'<div class="sidebar-user">'
-            f'<p class="sidebar-user-name"> Hello, {user_name} ({role_label})</p>'
+            f'<p class="sidebar-user-name">Hello, {user_name}</p>'
+            f'<p class="sidebar-user-role">{role_label}</p>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -128,17 +128,18 @@ def render_sidebar():
         st.divider()
 
         # ── Role-based navigation ──────────────────
+        btn_upload = False
+        btn_ho_dashboard = False
+        btn_ch_dashboard = False
+
         if role == "ch":
             # CH users: only CH Dashboard
             btn_ch_dashboard = st.button("📊  View CH Dashboard")
-            btn_upload        = False
-            btn_ho_dashboard  = False
             
         elif role == "sales":
             # Sales users: view HO and CH dashboards but NO upload option
             btn_ho_dashboard = st.button("📌  View HO Dashboard")
             btn_ch_dashboard = st.button("📊  View CH Dashboard")
-            btn_upload        = False
             
         else:
             # Admin / default: all tabs accessible
