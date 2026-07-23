@@ -24,6 +24,7 @@ HEADER_LABELS = {
     "status_code":       "Status Code",
     "status_updated_date": "Status Updated Date",
     "call_category":     "Call Category",
+    "cco_name" : "CCO Name"
 }
 
 IST = pytz.timezone('Asia/Kolkata')
@@ -621,6 +622,14 @@ def render_dashboard(
         else:
             columns_order.append("call_category")
 
+    if is_ho_sheet and "cco_name" in df_page.columns:
+            df_page["cco_name"] = df_page["cco_name"].fillna("-").replace("nan", "-")
+            if "age_from_call_reg" in columns_order:
+                idx = columns_order.index("age_from_call_reg") + 1
+                columns_order.insert(idx, "cco_name")
+            else:
+                columns_order.append("cco_name")
+
     columns_order.extend(all_remark_cols)
 
     for col in all_remark_cols:
@@ -636,6 +645,7 @@ def render_dashboard(
         "status_code": st.column_config.TextColumn("Status Code", width="None"),
         "status_updated_date": st.column_config.TextColumn("Status Updated Date", width="None"),
         "call_category": st.column_config.TextColumn("Call Category", width="None"),
+        "cco_name": st.column_config.TextColumn("CCO Name", width="None"),
     }
 
     for col in all_remark_cols:
@@ -677,4 +687,3 @@ def render_dashboard(
             st.rerun()
 
     st.caption("Remarks are separated by category and cataloged daily by date structural headers.")
-    
