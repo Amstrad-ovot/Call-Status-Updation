@@ -774,10 +774,114 @@ def checking_call_age_ch_data():
         print(f"Error in checking_call_age_ch_data: {e}")
         show_popup(f"Error in CH Age Check: {e}", type="error")
 
+# # To assign cco in HO data
+# def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
+#     try:
+#         # ── 1. Fetch current HO Data ──────────────────────────────────────
+#         spreadsheet = connect_gsheet()
+#         ho_ws = spreadsheet.worksheet("HO Raw Data")
+#         ho_data = ho_ws.get_all_values()
+
+#         if not ho_data or len(ho_data) <= 1:
+#             raise ValueError("HO Raw Data sheet is empty or contains no rows.")
+
+#         headers = [col.strip() for col in ho_data[0]]
+#         normalized_headers = [col.lower().replace(" ", "_") for col in headers]
+
+#         # Read into DataFrame using original headers to preserve state
+#         ho_df = pd.DataFrame(ho_data[1:], columns=headers)
+        
+#         # FIX: Safeguard against duplicate columns in HO sheet
+#         ho_df = ho_df.loc[:, ~ho_df.columns.duplicated()]
+        
+#         # ── 2. Normalize Incoming Excel Data ─────────────────────────────
+#         assigned_df.columns = assigned_df.columns.str.lower().str.strip().str.replace(" ", "_")
+        
+#         # FIX: Safeguard against duplicate columns in uploaded file
+#         assigned_df = assigned_df.loc[:, ~assigned_df.columns.duplicated()]
+        
+#         if "service_id" not in assigned_df.columns or "code" not in assigned_df.columns:
+#             print("Error: Uploaded file missing 'service_id' or 'code' columns.")
+#             return False
+
+#         # Helper function to strip '.0' from float strings safely
+#         def clean_code_string(val):
+#             val_str = str(val).strip()
+#             if val_str.endswith('.0'):
+#                 return val_str[:-2]
+#             return val_str
+
+#         assigned_df["service_id"] = assigned_df["service_id"].astype(str).str.strip()
+        
+#         # FIX: Clean the incoming codes to remove .0 before mapping
+#         assigned_df["code"] = assigned_df["code"].astype(str).apply(clean_code_string)
+        
+#         assigned_map = assigned_df.dropna(subset=["service_id"]).set_index("service_id")["code"].to_dict()
+
+#         # Find column mappings using case/space-insensitive match
+#         service_id_orig_col = headers[normalized_headers.index("service_id")]
+
+#         # ── 3. Handle 'Code' Column Positioning & Index ──────────────────
+#         if "code" not in normalized_headers:
+#             # If 'code' column doesn't exist, we must add it to the Google Sheet structure
+#             if "15+_calls" in normalized_headers:
+#                 target_col_idx = normalized_headers.index("15+_calls") + 2  # 1-based index + 1 right after
+#                 header_title = "Code"
+#             else:
+#                 target_col_idx = len(headers) + 1
+#                 header_title = "Code"
+            
+#             # Insert column in the Google Sheet structure
+#             ho_ws.insert_cols([[header_title]], col=target_col_idx)
+            
+#             # Re-fetch headers and indices to sync up
+#             ho_data = ho_ws.get_all_values()
+#             headers = [col.strip() for col in ho_data[0]]
+#             normalized_headers = [col.lower().replace(" ", "_") for col in headers]
+#             ho_df = pd.DataFrame(ho_data[1:], columns=headers)
+#             ho_df = ho_df.loc[:, ~ho_df.columns.duplicated()] # Re-apply deduplication
+
+#         # Get exact 1-based index of the Code column
+#         code_col_idx = normalized_headers.index("code") + 1
+#         code_orig_col = headers[code_col_idx - 1]
+
+#         # ── 4. Match and Update local DataFrame column ───────────────────
+#         ho_df[service_id_orig_col] = ho_df[service_id_orig_col].astype(str).str.strip()
+        
+#         # Calculate new codes while safely handling preexisting values
+#         ho_df[code_orig_col] = ho_df[service_id_orig_col].map(assigned_map).fillna(ho_df[code_orig_col]).replace("nan", "")
+        
+#         # FIX: Also clean pre-existing codes in the sheet just in case they contain '.0'
+#         ho_df[code_orig_col] = ho_df[code_orig_col].astype(str).apply(clean_code_string).replace("nan", "")
+
+#         # ── 5. Push ONLY the Code Column back to Google Sheets ───────────
+#         # Extract only the calculated Code values as a list of lists (column format)
+#         code_values_to_upload = [[val] for val in ho_df[code_orig_col].tolist()]
+        
+#         # Define range starting from Row 2 (skipping header) to the last row
+#         start_row = 2
+#         end_row = start_row + len(code_values_to_upload) - 1
+        
+#         # Format update range dynamically using column indexes (e.g., "E2:E100")
+#         range_start = rowcol_to_a1(start_row, code_col_idx)
+#         range_end = rowcol_to_a1(end_row, code_col_idx)
+#         update_range = f"{range_start}:{range_end}"
+
+#         # Single batch update targeted strictly at that range
+#         ho_ws.update(range_name=update_range, values=code_values_to_upload)
+        
+#         show_popup("Successfully updated", type = "success")
+#         return True
+        
+#     except Exception as e:
+#         print(f"Backend processing error: {e}")
+#         show_popup(f"Backend processing error: {e}", type= "error")
+#         return False
+
 # To assign cco in HO data
 def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
     try:
-        # ── 1. Fetch current HO Data ──────────────────────────────────────
+        # ── 1. Fetch current HO Data & Users Data ─────────────────────────
         spreadsheet = connect_gsheet()
         ho_ws = spreadsheet.worksheet("HO Raw Data")
         ho_data = ho_ws.get_all_values()
@@ -790,21 +894,41 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
 
         # Read into DataFrame using original headers to preserve state
         ho_df = pd.DataFrame(ho_data[1:], columns=headers)
-        
-        # FIX: Safeguard against duplicate columns in HO sheet
         ho_df = ho_df.loc[:, ~ho_df.columns.duplicated()]
-        
+
+        # Fetch and prepare CCO Map from 'Users' sheet
+        users_ws = spreadsheet.worksheet("Users")
+        users_data = users_ws.get_all_values()
+
+        cco_map = {}
+        if users_data and len(users_data) > 1:
+            u_headers = [col.strip().lower().replace(" ", "_") for col in users_data[0]]
+            u_df = pd.DataFrame(users_data[1:], columns=u_headers).reset_index(drop=True)
+
+            # Filter for CCO role safely
+            if "role" in u_df.columns and "code" in u_df.columns and "name" in u_df.columns:
+                role_series = u_df["role"].astype(str).str.strip().str.lower()
+                cco_df = u_df[role_series == "cco"].copy()
+
+                # Clean code strings in Users mapping
+                def clean_str(val):
+                    v = str(val).strip()
+                    return v[:-2] if v.endswith(".0") else v
+
+                cco_df["code"] = cco_df["code"].apply(clean_str)
+                cco_df["name"] = cco_df["name"].astype(str).str.strip()
+
+                cco_map = cco_df.set_index("code")["name"].to_dict()
+
         # ── 2. Normalize Incoming Excel Data ─────────────────────────────
+        assigned_df = assigned_df.reset_index(drop=True)
         assigned_df.columns = assigned_df.columns.str.lower().str.strip().str.replace(" ", "_")
-        
-        # FIX: Safeguard against duplicate columns in uploaded file
         assigned_df = assigned_df.loc[:, ~assigned_df.columns.duplicated()]
-        
+
         if "service_id" not in assigned_df.columns or "code" not in assigned_df.columns:
             print("Error: Uploaded file missing 'service_id' or 'code' columns.")
             return False
 
-        # Helper function to strip '.0' from float strings safely
         def clean_code_string(val):
             val_str = str(val).strip()
             if val_str.endswith('.0'):
@@ -812,73 +936,74 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
             return val_str
 
         assigned_df["service_id"] = assigned_df["service_id"].astype(str).str.strip()
-        
-        # FIX: Clean the incoming codes to remove .0 before mapping
         assigned_df["code"] = assigned_df["code"].astype(str).apply(clean_code_string)
-        
+
         assigned_map = assigned_df.dropna(subset=["service_id"]).set_index("service_id")["code"].to_dict()
 
-        # Find column mappings using case/space-insensitive match
         service_id_orig_col = headers[normalized_headers.index("service_id")]
 
-        # ── 3. Handle 'Code' Column Positioning & Index ──────────────────
+        # ── 3. Handle 'Code' & 'CCO Name' Column Positioning & Insertion ──
+        # Step A: Ensure 'Code' exists
         if "code" not in normalized_headers:
-            # If 'code' column doesn't exist, we must add it to the Google Sheet structure
-            if "15+_calls" in normalized_headers:
-                target_col_idx = normalized_headers.index("15+_calls") + 2  # 1-based index + 1 right after
-                header_title = "Code"
-            else:
-                target_col_idx = len(headers) + 1
-                header_title = "Code"
-            
-            # Insert column in the Google Sheet structure
-            ho_ws.insert_cols([[header_title]], col=target_col_idx)
-            
-            # Re-fetch headers and indices to sync up
+            target_col_idx = (normalized_headers.index("15+_calls") + 2) if "15+_calls" in normalized_headers else len(headers) + 1
+            ho_ws.insert_cols([["Code"]], col=target_col_idx)
+
+            # Re-sync local state
             ho_data = ho_ws.get_all_values()
             headers = [col.strip() for col in ho_data[0]]
             normalized_headers = [col.lower().replace(" ", "_") for col in headers]
-            ho_df = pd.DataFrame(ho_data[1:], columns=headers)
-            ho_df = ho_df.loc[:, ~ho_df.columns.duplicated()] # Re-apply deduplication
+            ho_df = pd.DataFrame(ho_data[1:], columns=headers).loc[:, ~pd.Series(headers).duplicated()]
 
-        # Get exact 1-based index of the Code column
+        code_col_idx = normalized_headers.index("code") + 1
+
+        # Step B: Ensure 'CCO Name' exists directly after 'Code'
+        if "cco_name" not in normalized_headers:
+            cco_col_idx = code_col_idx + 1
+            ho_ws.insert_cols([["cco_name"]], col=cco_col_idx)
+
+            # Re-sync local state
+            ho_data = ho_ws.get_all_values()
+            headers = [col.strip() for col in ho_data[0]]
+            normalized_headers = [col.lower().replace(" ", "_") for col in headers]
+            ho_df = pd.DataFrame(ho_data[1:], columns=headers).loc[:, ~pd.Series(headers).duplicated()]
+
         code_col_idx = normalized_headers.index("code") + 1
         code_orig_col = headers[code_col_idx - 1]
 
-        # ── 4. Match and Update local DataFrame column ───────────────────
+        cco_col_idx = normalized_headers.index("cco_name") + 1
+        cco_orig_col = headers[cco_col_idx - 1]
+
+        # ── 4. Match and Update local DataFrame columns ───────────────────
         ho_df[service_id_orig_col] = ho_df[service_id_orig_col].astype(str).str.strip()
-        
-        # Calculate new codes while safely handling preexisting values
+
+        # Update Code values
         ho_df[code_orig_col] = ho_df[service_id_orig_col].map(assigned_map).fillna(ho_df[code_orig_col]).replace("nan", "")
-        
-        # FIX: Also clean pre-existing codes in the sheet just in case they contain '.0'
         ho_df[code_orig_col] = ho_df[code_orig_col].astype(str).apply(clean_code_string).replace("nan", "")
 
-        # ── 5. Push ONLY the Code Column back to Google Sheets ───────────
-        # Extract only the calculated Code values as a list of lists (column format)
-        code_values_to_upload = [[val] for val in ho_df[code_orig_col].tolist()]
-        
-        # Define range starting from Row 2 (skipping header) to the last row
-        start_row = 2
-        end_row = start_row + len(code_values_to_upload) - 1
-        
-        # Format update range dynamically using column indexes (e.g., "E2:E100")
-        range_start = rowcol_to_a1(start_row, code_col_idx)
-        range_end = rowcol_to_a1(end_row, code_col_idx)
-        update_range = f"{range_start}:{range_end}"
+        # Update CCO Name values based on updated Code
+        ho_df[cco_orig_col] = ho_df[code_orig_col].map(cco_map).fillna(ho_df[cco_orig_col]).replace("nan", "")
 
-        # Single batch update targeted strictly at that range
-        ho_ws.update(range_name=update_range, values=code_values_to_upload)
-        
-        show_popup("Successfully updated", type = "success")
+        # ── 5. Push Code & CCO Name Columns back to Google Sheets ────────
+        start_row = 2
+        end_row = start_row + len(ho_df) - 1
+
+        # Push Code Column separately to prevent overwriting intermediate columns if not contiguous
+        code_vals = [[val] for val in ho_df[code_orig_col].values.tolist()]
+        code_range = f"{rowcol_to_a1(start_row, code_col_idx)}:{rowcol_to_a1(end_row, code_col_idx)}"
+        ho_ws.update(range_name=code_range, values=code_vals)
+
+        # Push CCO Name Column separately
+        cco_vals = [[val] for val in ho_df[cco_orig_col].values.tolist()]
+        cco_range = f"{rowcol_to_a1(start_row, cco_col_idx)}:{rowcol_to_a1(end_row, cco_col_idx)}"
+        ho_ws.update(range_name=cco_range, values=cco_vals)
+
+        show_popup("Successfully updated Code and CCO Name", type="success")
         return True
-        
+
     except Exception as e:
         print(f"Backend processing error: {e}")
-        show_popup(f"Backend processing error: {e}", type= "error")
+        show_popup(f"Backend processing error: {e}", type="error")
         return False
-
-
 
 # To create summmary report
 def calls_data():
