@@ -1,14 +1,14 @@
+import io
 import time
-from datetime import datetime
+import gspread
+import numpy as np
 import pandas as pd
 import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
 from gspread.utils import rowcol_to_a1
-import numpy as np
-import io
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from datetime import datetime, timedelta
 from openpyxl.utils import get_column_letter
+from google.oauth2.service_account import Credentials
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 
 # ──────────────────────────────────────────────
@@ -862,7 +862,7 @@ def checking_call_age_ch_data():
 #         start_row = 2
 #         end_row = start_row + len(code_values_to_upload) - 1
         
-#         # Format update range dynamically using column indexes (e.g., "E2:E100")
+#         # Format update range dynamically using column indexes
 #         range_start = rowcol_to_a1(start_row, code_col_idx)
 #         range_end = rowcol_to_a1(end_row, code_col_idx)
 #         update_range = f"{range_start}:{range_end}"
@@ -877,6 +877,8 @@ def checking_call_age_ch_data():
 #         print(f"Backend processing error: {e}")
 #         show_popup(f"Backend processing error: {e}", type= "error")
 #         return False
+
+
 
 # To assign cco in HO data
 def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
@@ -1005,6 +1007,7 @@ def update_call_assignment_in_ho(assigned_df: pd.DataFrame) -> bool:
         show_popup(f"Backend processing error: {e}", type="error")
         return False
 
+    
 # To create summmary report
 def calls_data():
     try:
@@ -1116,3 +1119,163 @@ def convert_df_to_formatted_excel(df):
 
     processed_data = output.getvalue()
     return processed_data
+
+
+def get_missing_remarks_report(target_date_str=None, num_days=3) -> dict:
+    """
+    Finds eligible calls from CH and HO Raw Data where ALL check dates strictly fall
+    within the call's eligible remarking window and remarks are completely missing across those dates.
+
+    Saves the output into a single Excel file with two separate sheets: 'CH Pending' and 'HO Pending'.
+
+    Parameters:
+    ----------
+    target_date_str : str, optional
+        Base date in 'YYYY-MM-DD' format. Defaults to today's date if None.
+    num_days : int, optional
+        Number of valid working days (excluding Sundays) prior to target_date_str to check. Default is 3.
+
+    Returns:
+    -------
+    dict
+        A dictionary with keys 'CH' and 'HO' mapping to their respective DataFrames.
+    """
+    try:
+        spreadsheet = connect_gsheet()
+        
+        # ── 1. Calculate Target Date & Prior Non-Sunday Check Dates ───────
+        if target_date_str is None:
+            target_date = pd.Timestamp.now().normalize()
+        else:
+            target_date = pd.to_datetime(target_date_str).normalize()
+
+        # Generate list of check dates (excluding target_date_str and skipping Sundays)
+        dates_to_check = []
+        curr_dt = target_date - timedelta(days=1)
+
+        while len(dates_to_check) < num_days:
+            if curr_dt.weekday() != 6:  # Skip Sundays
+                dates_to_check.append(curr_dt.strftime("%Y-%m-%d"))
+            curr_dt -= timedelta(days=1)
+
+        check_dates_dt = [pd.to_datetime(d) for d in dates_to_check]
+
+        print(f"Target Base Date: {target_date.strftime('%Y-%m-%d')}")
+        print(f"Checking remarks across prior non-Sunday dates: {dates_to_check}")
+
+        # Dynamic remark column names to check
+        remark_cols_to_check = []
+        for d in dates_to_check:
+            remark_cols_to_check.extend([
+                f"remark_cust_{d}",
+                f"remark_asp_{d}",
+                f"remark_internalteam_{d}"
+            ])
+
+        # Helper function to process each sheet based on specific eligibility rules
+        def process_sheet_data(sheet_name, min_age, max_age=None):
+            try:
+                ws = spreadsheet.worksheet(sheet_name)
+                data = ws.get_all_values()
+            except Exception:
+                print(f"Worksheet {sheet_name} not found.")
+                return pd.DataFrame()
+
+            if not data or len(data) <= 1:
+                return pd.DataFrame()
+
+            headers = [col.strip().lower().replace(" ", "_") for col in data[0]]
+            df = pd.DataFrame(data[1:], columns=headers)
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+
+            if "call_date" not in df.columns or "service_id" not in df.columns:
+                return pd.DataFrame()
+
+            # ── Calculate Age and Baseline Eligibility ──
+            df["call_date_dt"] = pd.to_datetime(df["call_date"], errors="coerce").dt.normalize()
+            df["call_age_days"] = (target_date - df["call_date_dt"]).dt.days.fillna(0).astype(int)
+
+            if max_age is not None:
+                # CH condition: Overall age between min_age and max_age
+                age_mask = (df["call_age_days"] >= min_age) & (df["call_age_days"] <= max_age)
+            else:
+                # HO condition: Overall age >= min_age
+                age_mask = df["call_age_days"] >= min_age
+
+            df_eligible = df[age_mask].copy()
+
+            if df_eligible.empty:
+                return pd.DataFrame()
+
+            # ── 2. Check if ALL check dates fall inside each call's Eligible Date Range ──
+            df_eligible["eligible_start_dt"] = df_eligible["call_date_dt"] + pd.Timedelta(days=min_age)
+            df_eligible["eligible_end_dt"] = df_eligible["call_date_dt"] + pd.to_timedelta(df_eligible["call_age_days"], unit="D")
+
+            # Validate every single check date against [eligible_start_dt, eligible_end_dt]
+            range_valid_mask = pd.Series(True, index=df_eligible.index)
+            for c_dt in check_dates_dt:
+                is_date_valid = (c_dt >= df_eligible["eligible_start_dt"]) & (c_dt <= df_eligible["eligible_end_dt"])
+                range_valid_mask = range_valid_mask & is_date_valid
+
+            df_eligible = df_eligible[range_valid_mask].copy()
+
+            if df_eligible.empty:
+                return pd.DataFrame()
+
+            # Ensure all required remark columns exist
+            for col in remark_cols_to_check:
+                if col not in df_eligible.columns:
+                    df_eligible[col] = ""
+
+            # ── 3. Check if ALL remarks are empty across specified check dates ──
+            missing_mask = pd.Series(True, index=df_eligible.index)
+
+            for col in remark_cols_to_check:
+                col_clean = df_eligible[col].astype(str).str.strip().str.lower()
+                is_empty = (col_clean == "") | (col_clean == "nan") | (col_clean == "none")
+                missing_mask = missing_mask & is_empty
+
+            df_missing = df_eligible[missing_mask].copy()
+
+            # Clean up temporary calculation columns
+            df_missing.drop(
+                columns=["call_date_dt", "eligible_start_dt", "eligible_end_dt"], 
+                errors="ignore", 
+                inplace=True
+            )
+            df_missing["source_type"] = "CH" if "CH" in sheet_name else "HO"
+
+            return df_missing
+
+        # ── Process CH Raw Data (Min Age 8, Max Age 14) ────────────────────
+        df_ch_pending = process_sheet_data("CH Raw Data", min_age=8, max_age=14)
+
+        # ── Process HO Raw Data (Min Age 15+) ─────────────────────────────
+        df_ho_pending = process_sheet_data("HO Raw Data", min_age=15, max_age=None)
+
+        # ── Save Both DataFrames into Two Separate Sheets in One Excel File ──
+        output_filename = f"missing_remarks_report_{target_date.strftime('%Y-%m-%d')}.xlsx"
+        
+        with pd.ExcelWriter(output_filename, engine="openpyxl") as writer:
+            df_ch_pending.to_excel(writer, sheet_name="CH Pending", index=False)
+            df_ho_pending.to_excel(writer, sheet_name="HO Pending", index=False)
+
+        total_found = len(df_ch_pending) + len(df_ho_pending)
+
+        if total_found == 0:
+            print("No eligible pending call remarks found for the selected criteria!")
+            show_popup("No eligible pending call remarks found for the selected criteria!", type="info")
+        else:
+            print(f"Found {len(df_ch_pending)} CH call(s) and {len(df_ho_pending)} HO call(s) missing remarks.")
+            print(f"Results successfully saved to '{output_filename}' across two separate sheets ('CH Pending' and 'HO Pending').")
+
+        # Return both DataFrames in a dictionary structure
+        return {
+            "CH": df_ch_pending,
+            "HO": df_ho_pending
+        }
+
+    except Exception as e:
+        print(f"Error in get_missing_remarks_report: {e}")
+        show_popup(f"Error finding missing remarks: {e}", type="error")
+        return {"CH": pd.DataFrame(), "HO": pd.DataFrame()}
