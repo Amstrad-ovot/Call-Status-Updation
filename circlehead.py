@@ -525,17 +525,26 @@ def render_dashboard(
     #     m3.metric("14+ Day Calls", int(df_view["15+_calls"].astype(str).eq("1").sum()))
 
     st.divider()
-
     # ── Search & filter controls ──────────────────────────
     search_backing_key = f"search_val_{sheet_name}"
     circle_backing_key = f"circle_val_{sheet_name}"
+    cco_backing_key    = f"cco_val_{sheet_name}"
 
     if search_backing_key not in st.session_state:
         st.session_state[search_backing_key] = ""
     if circle_backing_key not in st.session_state:
         st.session_state[circle_backing_key] = "All"
+    if cco_backing_key not in st.session_state:
+        st.session_state[cco_backing_key] = "All"
 
-    col_search, col_circle, col_reset = st.columns([3, 2, 1])
+    has_cco_col = "cco_name" in df_view.columns
+
+    # Adjust layout grid based on whether CCO Name column exists
+    if has_cco_col:
+        col_search, col_circle, col_cco, col_reset = st.columns([3, 2, 2, 1])
+    else:
+        col_search, col_circle, col_reset = st.columns([3, 2, 1])
+
     with col_search:
         st.text_input(
             "Search Service ID / Customer",
@@ -546,32 +555,54 @@ def render_dashboard(
                 get_page_key(sheet_name): 1,
             }),
         )
+
     with col_circle:
         unique_circles = (["All"] + sorted(df_view["circle"].dropna().unique().tolist())
                           if "circle" in df_view.columns else ["All"])
         try:
-            default_idx = unique_circles.index(st.session_state[circle_backing_key])
+            default_circle_idx = unique_circles.index(st.session_state[circle_backing_key])
         except ValueError:
-            default_idx = 0
+            default_circle_idx = 0
         st.selectbox(
-            "Filter by Circle", options=unique_circles, index=default_idx,
+            "Filter by Circle", options=unique_circles, index=default_circle_idx,
             key=f"circle_select_{sheet_name}",
             on_change=lambda: st.session_state.update({
                 circle_backing_key: st.session_state.get(f"circle_select_{sheet_name}", "All"),
                 get_page_key(sheet_name): 1,
             }),
         )
+
+    if has_cco_col:
+        with col_cco:
+            # Clean and retrieve unique non-empty CCO Names
+            cco_options = df_view["cco_name"].fillna("-").replace("nan", "-").astype(str).str.strip()
+            unique_ccos = ["All"] + sorted([c for c in cco_options.unique().tolist() if c and c != "-"] )
+            try:
+                default_cco_idx = unique_ccos.index(st.session_state[cco_backing_key])
+            except ValueError:
+                default_cco_idx = 0
+            st.selectbox(
+                "Filter by CCO Name", options=unique_ccos, index=default_cco_idx,
+                key=f"cco_select_{sheet_name}",
+                on_change=lambda: st.session_state.update({
+                    cco_backing_key: st.session_state.get(f"cco_select_{sheet_name}", "All"),
+                    get_page_key(sheet_name): 1,
+                }),
+            )
+
     with col_reset:
         st.markdown("<div style='padding-top:28px'>", unsafe_allow_html=True)
         if st.button("Clear", key=f"clear_{sheet_name}", use_container_width=True):
             st.session_state[search_backing_key] = ""
             st.session_state[circle_backing_key] = "All"
+            st.session_state[cco_backing_key] = "All"
             st.session_state[get_page_key(sheet_name)] = 1
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
     search          = st.session_state[search_backing_key]
     selected_circle = st.session_state[circle_backing_key]
+    selected_cco    = st.session_state[cco_backing_key]
 
     # ── Build df_filtered ─────────────────────────────────
     df_filtered = df_view.reset_index(drop=False)
@@ -581,13 +612,79 @@ def render_dashboard(
             | df_filtered["customer_name"].astype(str).str.contains(search, case=False, na=False)
         )
         df_filtered = df_filtered[mask]
+
     if selected_circle != "All" and "circle" in df_filtered.columns:
         df_filtered = df_filtered[df_filtered["circle"].astype(str) == selected_circle]
+
+    if selected_cco != "All" and has_cco_col:
+        df_filtered = df_filtered[
+            df_filtered["cco_name"].fillna("-").replace("nan", "-").astype(str).str.strip() == selected_cco]
+
     df_filtered = df_filtered.reset_index(drop=True)
 
-    if df_filtered.empty:
-        st.warning("No matching records found for the combined filters.")
-        return
+
+    # # ── Search & filter controls ──────────────────────────
+    # search_backing_key = f"search_val_{sheet_name}"
+    # circle_backing_key = f"circle_val_{sheet_name}"
+
+    # if search_backing_key not in st.session_state:
+    #     st.session_state[search_backing_key] = ""
+    # if circle_backing_key not in st.session_state:
+    #     st.session_state[circle_backing_key] = "All"
+
+    # col_search, col_circle, col_reset = st.columns([3, 2, 1])
+    # with col_search:
+    #     st.text_input(
+    #         "Search Service ID / Customer",
+    #         value=st.session_state[search_backing_key],
+    #         key=f"search_{sheet_name}",
+    #         on_change=lambda: st.session_state.update({
+    #             search_backing_key: st.session_state.get(f"search_{sheet_name}", ""),
+    #             get_page_key(sheet_name): 1,
+    #         }),
+    #     )
+    # with col_circle:
+    #     unique_circles = (["All"] + sorted(df_view["circle"].dropna().unique().tolist())
+    #                       if "circle" in df_view.columns else ["All"])
+    #     try:
+    #         default_idx = unique_circles.index(st.session_state[circle_backing_key])
+    #     except ValueError:
+    #         default_idx = 0
+    #     st.selectbox(
+    #         "Filter by Circle", options=unique_circles, index=default_idx,
+    #         key=f"circle_select_{sheet_name}",
+    #         on_change=lambda: st.session_state.update({
+    #             circle_backing_key: st.session_state.get(f"circle_select_{sheet_name}", "All"),
+    #             get_page_key(sheet_name): 1,
+    #         }),
+    #     )
+    # with col_reset:
+    #     st.markdown("<div style='padding-top:28px'>", unsafe_allow_html=True)
+    #     if st.button("Clear", key=f"clear_{sheet_name}", use_container_width=True):
+    #         st.session_state[search_backing_key] = ""
+    #         st.session_state[circle_backing_key] = "All"
+    #         st.session_state[get_page_key(sheet_name)] = 1
+    #         st.rerun()
+    #     st.markdown("</div>", unsafe_allow_html=True)
+
+    # search          = st.session_state[search_backing_key]
+    # selected_circle = st.session_state[circle_backing_key]
+
+    # # ── Build df_filtered ─────────────────────────────────
+    # df_filtered = df_view.reset_index(drop=False)
+    # if search:
+    #     mask = (
+    #         df_filtered["service_id"].astype(str).str.contains(search, case=False, na=False)
+    #         | df_filtered["customer_name"].astype(str).str.contains(search, case=False, na=False)
+    #     )
+    #     df_filtered = df_filtered[mask]
+    # if selected_circle != "All" and "circle" in df_filtered.columns:
+    #     df_filtered = df_filtered[df_filtered["circle"].astype(str) == selected_circle]
+    # df_filtered = df_filtered.reset_index(drop=True)
+
+    # if df_filtered.empty:
+    #     st.warning("No matching records found for the combined filters.")
+    #     return
 
     # ── Download ──────────────────────────────────────────
     _, col_dl = st.columns([4, 2])
