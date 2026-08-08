@@ -515,10 +515,14 @@ def render_dashboard(
     # ── Metrics ───────────────────────────────────────────
     m1, m2, m3 = st.columns(3)
     m1.metric("Total Records", len(df_view))
-    if "7+_calls" in df_view.columns:
-        m2.metric("7+ Day Calls", int(df_view["7+_calls"].astype(str).eq("1").sum()))
-    if "15+_calls" in df_view.columns:
-        m3.metric("14+ Day Calls", int(df_view["15+_calls"].astype(str).eq("1").sum()))
+    if "call_category" in df_view.columns:
+        m2.metric("15th Day Calls", (df_view["call_category"].str.strip().str.lower() == "red call").sum())
+        m3.metric("15+ Calls", (df_view["call_category"].str.strip().str.lower() == "encroaching").sum())
+        
+    # if "7+_calls" in df_view.columns:
+    #     m2.metric("7+ Day Calls", int(df_view["7+_calls"].astype(str).eq("1").sum()))
+    # if "15+_calls" in df_view.columns:
+    #     m3.metric("14+ Day Calls", int(df_view["15+_calls"].astype(str).eq("1").sum()))
 
     st.divider()
 
