@@ -68,16 +68,51 @@ if page == "upload":
         "Choose the Raw Data Excel file", type=["xlsx"], key="raw_file"
     )
 
+    # if uploaded_raw_file is not None:
+    #     if st.button("Upload Data"):
+    #         with st.spinner("Processing data and pushing to Database..."):
+    #             try:
+    #                 checking_call_age_ch_data()
+    #                 final_df = func1(uploaded_raw_file)
+    #                 if isinstance(final_df, pd.DataFrame):
+    #                     update_ch_raw_data()
+    #                     update_ho_raw_data()
+    #                     st.success("✅ Data updated in Database!")
+    #             except Exception as e:
+    #                 st.error(f"Error during processing: {e}")
+
+    # st.divider()
+
     if uploaded_raw_file is not None:
         if st.button("Upload Data"):
-            with st.spinner("Processing data and pushing to Database..."):
+            with st.spinner("Processing data and updating call records..."):
                 try:
-                    checking_call_age_ch_data()
+                    # STEP 1: Process the latest uploaded Excel file.
+                    # Detailed_Data will now contain the latest status_code,
+                    # status, team, number, and other updated fields.
                     final_df = func1(uploaded_raw_file)
+
                     if isinstance(final_df, pd.DataFrame):
+
+                        # STEP 2: Synchronize CH Raw Data.
                         update_ch_raw_data()
+
+                        # STEP 3: Move calls that have reached the transfer
+                        # age from CH Raw Data to HO Raw Data.
+                        checking_call_age_ch_data()
+
+                        # STEP 4: Synchronize HO Raw Data using the latest
+                        # data in Detailed_Data.
                         update_ho_raw_data()
-                        st.success("✅ Data updated in Database!")
+
+                        st.success("✅ Data updated successfully!")
+
+                    else:
+                        st.error(
+                            "❌ Raw data processing failed. "
+                            "Please check the error messages."
+                        )
+
                 except Exception as e:
                     st.error(f"Error during processing: {e}")
 
